@@ -33,51 +33,51 @@ export default function App() {
   const [showLoginModal, setShowLoginModal] = useState<boolean>(false);
   const [isAdminMode, setIsAdminMode] = useState<boolean>(false);
 
-  // Load website data
+  // Load website data with a 2.5-second timeout safeguard to prevent infinite loading
   const loadData = async () => {
+    const timeoutPromise = new Promise<void>((resolve) => {
+      setTimeout(() => {
+        console.warn('[App] API load timed out (2.5s). Falling back to local data.');
+        resolve();
+      }, 2500);
+    });
+
     try {
-      let catData = fallbackCategories;
-      let itemData = fallbackMenuItems;
-      let contentData = fallbackWebsiteContent;
+      let catData: Category[] = [];
+      let itemData: MenuItem[] = [];
+      let contentData: WebsiteContent | null = null;
 
-      try {
-        const catRes = await fetch('/api/categories');
-        if (catRes.ok) {
-          catData = await catRes.json();
-        } else {
-          console.warn(`[App] Failed to fetch categories: ${catRes.status}. Using fallback.`);
+      const fetchData = async () => {
+        try {
+          const catRes = await fetch('/api/categories');
+          if (catRes.ok) catData = await catRes.json();
+        } catch (err) {
+          console.warn('[App] Error fetching categories:', err);
         }
-      } catch (err) {
-        console.warn('[App] Error fetching categories. Using fallback.', err);
-      }
 
-      try {
-        const itemRes = await fetch('/api/menu-items');
-        if (itemRes.ok) {
-          itemData = await itemRes.json();
-        } else {
-          console.warn(`[App] Failed to fetch menu-items: ${itemRes.status}. Using fallback.`);
+        try {
+          const itemRes = await fetch('/api/menu-items');
+          if (itemRes.ok) itemData = await itemRes.json();
+        } catch (err) {
+          console.warn('[App] Error fetching menu-items:', err);
         }
-      } catch (err) {
-        console.warn('[App] Error fetching menu-items. Using fallback.', err);
-      }
 
-      try {
-        const contentRes = await fetch('/api/website-content');
-        if (contentRes.ok) {
-          contentData = await contentRes.json();
-        } else {
-          console.warn(`[App] Failed to fetch website-content: ${contentRes.status}. Using fallback.`);
+        try {
+          const contentRes = await fetch('/api/website-content');
+          if (contentRes.ok) contentData = await contentRes.json();
+        } catch (err) {
+          console.warn('[App] Error fetching website-content:', err);
         }
-      } catch (err) {
-        console.warn('[App] Error fetching website-content. Using fallback.', err);
-      }
+      };
 
-      setCategories(catData || fallbackCategories);
-      setMenuItems(itemData || fallbackMenuItems);
+      // Race the actual fetch against our timeout promise
+      await Promise.race([fetchData(), timeoutPromise]);
+
+      setCategories(catData && catData.length > 0 ? catData : fallbackCategories);
+      setMenuItems(itemData && itemData.length > 0 ? itemData : fallbackMenuItems);
       setWebsiteContent(contentData || fallbackWebsiteContent);
     } catch (error) {
-      console.error('Error fetching digital menu data:', error);
+      console.error('Error fetching digital menu data, using fallbacks:', error);
       setCategories(fallbackCategories);
       setMenuItems(fallbackMenuItems);
       setWebsiteContent(fallbackWebsiteContent);
@@ -153,10 +153,10 @@ export default function App() {
           className="flex flex-col cursor-pointer group"
         >
           <span className="text-2xl font-black tracking-widest text-white font-display group-hover:text-[#D4AF37] transition-colors leading-none uppercase">
-            HOKAI
+            {websiteContent.restaurantName || "HOKAI"}
           </span>
           <span className="text-[9px] font-sans tracking-[0.25em] text-[#D4AF37]/80 leading-none uppercase mt-1 font-medium">
-            Pan-Asian Kitchen
+            {websiteContent.restaurantSubtitle || "Pan-Asian Kitchen"}
           </span>
         </div>
 
@@ -332,8 +332,8 @@ export default function App() {
             {/* PUBLIC WEBSITE VIEW */}
             <HeroSection
               bannerImage={websiteContent.heroBanner}
-              restaurantName="HOKAI"
-              subtitle="Pan-Asian Kitchen"
+              restaurantName={websiteContent.restaurantName || "HOKAI"}
+              subtitle={websiteContent.restaurantSubtitle || "Pan-Asian Kitchen"}
               onViewMenuClick={() => scrollToSection('menu')}
             />
             <MenuSection
@@ -368,8 +368,12 @@ export default function App() {
         <div className="max-w-4xl mx-auto px-4 relative z-10 flex flex-col items-center">
           {/* Logo */}
           <div className="mb-4">
-            <span className="text-3xl font-black tracking-widest text-white font-display block uppercase">HOKAI</span>
-            <span className="text-[10px] font-sans tracking-[0.3em] text-[#D4AF37] block uppercase mt-1">Pan-Asian Kitchen</span>
+            <span className="text-3xl font-black tracking-widest text-white font-display block uppercase">
+              {websiteContent.restaurantName || "HOKAI"}
+            </span>
+            <span className="text-[10px] font-sans tracking-[0.3em] text-[#D4AF37] block uppercase mt-1">
+              {websiteContent.restaurantSubtitle || "Pan-Asian Kitchen"}
+            </span>
           </div>
 
           <p className="text-white/40 text-xs max-w-sm mx-auto leading-relaxed mb-6 font-sans">

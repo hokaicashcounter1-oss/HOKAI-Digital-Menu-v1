@@ -126,3 +126,219 @@ export async function getSupabaseWebsiteContent(): Promise<WebsiteContent | null
     return null;
   }
 }
+
+export async function upsertSupabaseCategory(category: Category): Promise<boolean> {
+  const client = getSupabaseClient();
+  if (!client) return false;
+  try {
+    const payload = {
+      id: category.id,
+      name: category.name,
+      slug: category.slug
+    };
+    const { error } = await client.from('categories').upsert(payload);
+    if (error) {
+      console.error('[Supabase] Error upserting category:', error.message);
+      return false;
+    }
+    return true;
+  } catch (err: any) {
+    console.error('[Supabase] Exception in upserting category:', err.message || err);
+    return false;
+  }
+}
+
+export async function deleteSupabaseCategory(id: string): Promise<boolean> {
+  const client = getSupabaseClient();
+  if (!client) return false;
+  try {
+    const { error } = await client.from('categories').delete().eq('id', id);
+    if (error) {
+      console.error('[Supabase] Error deleting category:', error.message);
+      return false;
+    }
+    return true;
+  } catch (err: any) {
+    console.error('[Supabase] Exception in deleting category:', err.message || err);
+    return false;
+  }
+}
+
+export async function deleteSupabaseCategories(ids: string[]): Promise<boolean> {
+  const client = getSupabaseClient();
+  if (!client) return false;
+  try {
+    const { error } = await client.from('categories').delete().in('id', ids);
+    if (error) {
+      console.error('[Supabase] Error deleting multiple categories:', error.message);
+      return false;
+    }
+    return true;
+  } catch (err: any) {
+    console.error('[Supabase] Exception in deleting multiple categories:', err.message || err);
+    return false;
+  }
+}
+
+export async function deleteAllSupabaseCategories(): Promise<boolean> {
+  const client = getSupabaseClient();
+  if (!client) return false;
+  try {
+    const { error } = await client.from('categories').delete().neq('id', 'this_should_never_match_hopefully');
+    if (error) {
+      console.error('[Supabase] Error deleting all categories:', error.message);
+      return false;
+    }
+    return true;
+  } catch (err: any) {
+    console.error('[Supabase] Exception in deleting all categories:', err.message || err);
+    return false;
+  }
+}
+
+export async function upsertSupabaseMenuItem(item: MenuItem): Promise<boolean> {
+  const client = getSupabaseClient();
+  if (!client) return false;
+  try {
+    const camelPayload = {
+      id: item.id,
+      name: item.name,
+      description: item.description,
+      price: item.price,
+      categoryId: item.categoryId,
+      image: item.image,
+      isVeg: item.isVeg,
+      isNonVeg: item.isNonVeg,
+      spiceLevel: item.spiceLevel,
+      isDraft: item.isDraft
+    };
+
+    const { error: camelErr } = await client.from('menu_items').upsert(camelPayload);
+    if (!camelErr) return true;
+
+    console.warn('[Supabase] camelCase upsert failed, trying snake_case fields:', camelErr.message);
+
+    const snakePayload = {
+      id: item.id,
+      name: item.name,
+      description: item.description,
+      price: item.price,
+      category_id: item.categoryId,
+      image: item.image,
+      is_veg: item.isVeg,
+      is_non_veg: item.isNonVeg,
+      spice_level: item.spiceLevel,
+      is_draft: item.isDraft
+    };
+
+    const { error: snakeErr } = await client.from('menu_items').upsert(snakePayload);
+    if (snakeErr) {
+      console.error('[Supabase] snake_case upsert also failed:', snakeErr.message);
+      return false;
+    }
+    return true;
+  } catch (err: any) {
+    console.error('[Supabase] Exception in upserting menu item:', err.message || err);
+    return false;
+  }
+}
+
+export async function deleteSupabaseMenuItem(id: string): Promise<boolean> {
+  const client = getSupabaseClient();
+  if (!client) return false;
+  try {
+    const { error } = await client.from('menu_items').delete().eq('id', id);
+    if (error) {
+      console.error('[Supabase] Error deleting menu item:', error.message);
+      return false;
+    }
+    return true;
+  } catch (err: any) {
+    console.error('[Supabase] Exception in deleting menu item:', err.message || err);
+    return false;
+  }
+}
+
+export async function deleteSupabaseMenuItems(ids: string[]): Promise<boolean> {
+  const client = getSupabaseClient();
+  if (!client) return false;
+  try {
+    const { error } = await client.from('menu_items').delete().in('id', ids);
+    if (error) {
+      console.error('[Supabase] Error deleting multiple menu items:', error.message);
+      return false;
+    }
+    return true;
+  } catch (err: any) {
+    console.error('[Supabase] Exception in deleting multiple menu items:', err.message || err);
+    return false;
+  }
+}
+
+export async function deleteAllSupabaseMenuItems(): Promise<boolean> {
+  const client = getSupabaseClient();
+  if (!client) return false;
+  try {
+    const { error } = await client.from('menu_items').delete().neq('id', 'this_should_never_match_hopefully');
+    if (error) {
+      console.error('[Supabase] Error deleting all menu items:', error.message);
+      return false;
+    }
+    return true;
+  } catch (err: any) {
+    console.error('[Supabase] Exception in deleting all menu items:', err.message || err);
+    return false;
+  }
+}
+
+export async function upsertSupabaseWebsiteContent(content: WebsiteContent): Promise<boolean> {
+  const client = getSupabaseClient();
+  if (!client) return false;
+  try {
+    const { data: existing } = await client.from('website_content').select('id').limit(1).maybeSingle();
+    const id = existing?.id || 1;
+
+    const camelPayload = {
+      id,
+      heroBanner: content.heroBanner,
+      aboutSection: content.aboutSection,
+      phone: content.contactInfo.phone,
+      whatsapp: content.contactInfo.whatsapp,
+      email: content.contactInfo.email,
+      address: content.contactInfo.address,
+      googleMaps: content.contactInfo.googleMaps,
+      facebook: content.contactInfo.facebook,
+      instagram: content.contactInfo.instagram,
+      gallery: content.gallery
+    };
+
+    const { error: camelErr } = await client.from('website_content').upsert(camelPayload);
+    if (!camelErr) return true;
+
+    console.warn('[Supabase] camelCase website_content upsert failed, trying snake_case:', camelErr.message);
+
+    const snakePayload = {
+      id,
+      hero_banner: content.heroBanner,
+      about_section: content.aboutSection,
+      phone: content.contactInfo.phone,
+      whatsapp: content.contactInfo.whatsapp,
+      email: content.contactInfo.email,
+      address: content.contactInfo.address,
+      google_maps: content.contactInfo.googleMaps,
+      facebook: content.contactInfo.facebook,
+      instagram: content.contactInfo.instagram,
+      gallery: content.gallery
+    };
+
+    const { error: snakeErr } = await client.from('website_content').upsert(snakePayload);
+    if (snakeErr) {
+      console.error('[Supabase] snake_case website_content upsert also failed:', snakeErr.message);
+      return false;
+    }
+    return true;
+  } catch (err: any) {
+    console.error('[Supabase] Exception in upserting website content:', err.message || err);
+    return false;
+  }
+}

@@ -1,7 +1,20 @@
 import express from 'express';
 import { DBManager, Category, MenuItem } from '../server/db.js';
 import { parseMenuPDF } from '../server/gemini.js';
-import { getSupabaseCategories, getSupabaseMenuItems, getSupabaseWebsiteContent } from '../server/supabase.js';
+import {
+  getSupabaseCategories,
+  getSupabaseMenuItems,
+  getSupabaseWebsiteContent,
+  upsertSupabaseCategory,
+  deleteSupabaseCategory,
+  deleteSupabaseCategories,
+  deleteAllSupabaseCategories,
+  upsertSupabaseMenuItem,
+  deleteSupabaseMenuItem,
+  deleteSupabaseMenuItems,
+  deleteAllSupabaseMenuItems,
+  upsertSupabaseWebsiteContent
+} from '../server/supabase.js';
 
 const app = express();
 
@@ -87,7 +100,7 @@ app.get('/api/categories', async (req, res) => {
   }
 });
 
-app.post('/api/categories', requireAdmin, (req, res) => {
+app.post('/api/categories', requireAdmin, async (req, res) => {
   try {
     const { name } = req.body;
     if (!name) return res.status(400).json({ error: 'Category name is required' });
@@ -108,13 +121,63 @@ app.post('/api/categories', requireAdmin, (req, res) => {
 
     categories.push(newCategory);
     DBManager.updateCategories(categories);
+
+    // Sync to Supabase
+    await upsertSupabaseCategory(newCategory);
+
     res.status(201).json(newCategory);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
 });
 
-app.put('/api/categories/:id', requireAdmin, (req, res) => {
+// Delete all categories
+app.delete('/api/categories/all', requireAdmin, async (req, res) => {
+  try {
+    DBManager.updateCategories([]);
+    DBManager.updateMenuItems([]); // Clean up associated items as well since categories are gone
+
+    // Sync to Supabase
+    await deleteAllSupabaseCategories();
+    await deleteAllSupabaseMenuItems();
+
+    res.json({ success: true, message: 'All categories and associated menu items deleted successfully' });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Bulk delete categories
+app.post('/api/categories/bulk-delete', requireAdmin, async (req, res) => {
+  try {
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'Valid array of category IDs is required' });
+    }
+
+    const categories = DBManager.getCategories();
+    const filteredCategories = categories.filter(c => !ids.includes(c.id));
+
+    const menuItems = DBManager.getMenuItems();
+    const deletedItems = menuItems.filter(item => ids.includes(item.categoryId));
+    const filteredItems = menuItems.filter(item => !ids.includes(item.categoryId));
+
+    DBManager.updateCategories(filteredCategories);
+    DBManager.updateMenuItems(filteredItems);
+
+    // Sync to Supabase
+    await deleteSupabaseCategories(ids);
+    if (deletedItems.length > 0) {
+      await deleteSupabaseMenuItems(deletedItems.map(item => item.id));
+    }
+
+    res.json({ success: true, message: 'Selected categories and associated items deleted successfully' });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.put('/api/categories/:id', requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     const { name } = req.body;
@@ -132,13 +195,17 @@ app.put('/api/categories/:id', requireAdmin, (req, res) => {
     };
 
     DBManager.updateCategories(categories);
+
+    // Sync to Supabase
+    await upsertSupabaseCategory(categories[catIndex]);
+
     res.json(categories[catIndex]);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
 });
 
-app.delete('/api/categories/:id', requireAdmin, (req, res) => {
+app.delete('/api/categories/:id', requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     const categories = DBManager.getCategories();
@@ -150,10 +217,17 @@ app.delete('/api/categories/:id', requireAdmin, (req, res) => {
 
     // Also clean up or migrate items associated with this category
     const menuItems = DBManager.getMenuItems();
+    const deletedItems = menuItems.filter(item => item.categoryId === id);
     const filteredItems = menuItems.filter(item => item.categoryId !== id);
     
     DBManager.updateCategories(filteredCategories);
     DBManager.updateMenuItems(filteredItems);
+
+    // Sync to Supabase
+    await deleteSupabaseCategory(id);
+    if (deletedItems.length > 0) {
+      await deleteSupabaseMenuItems(deletedItems.map(item => item.id));
+    }
 
     res.json({ success: true, message: 'Category deleted and its associated items removed' });
   } catch (error: any) {
@@ -175,7 +249,43 @@ app.get('/api/menu-items', async (req, res) => {
   }
 });
 
-app.post('/api/menu-items', requireAdmin, (req, res) => {
+// Delete all menu items
+app.delete('/api/menu-items/all', requireAdmin, async (req, res) => {
+  try {
+    DBManager.updateMenuItems([]);
+
+    // Sync to Supabase
+    await deleteAllSupabaseMenuItems();
+
+    res.json({ success: true, message: 'All menu items deleted successfully' });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Bulk delete menu items
+app.post('/api/menu-items/bulk-delete', requireAdmin, async (req, res) => {
+  try {
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'Valid array of menu item IDs is required' });
+    }
+
+    const menuItems = DBManager.getMenuItems();
+    const filtered = menuItems.filter(item => !ids.includes(item.id));
+
+    DBManager.updateMenuItems(filtered);
+
+    // Sync to Supabase
+    await deleteSupabaseMenuItems(ids);
+
+    res.json({ success: true, message: 'Selected menu items deleted successfully' });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/menu-items', requireAdmin, async (req, res) => {
   try {
     const { name, description, price, categoryId, image, isVeg, isNonVeg, spiceLevel, isDraft } = req.body;
     if (!name || !price || !categoryId) {
@@ -198,13 +308,17 @@ app.post('/api/menu-items', requireAdmin, (req, res) => {
 
     menuItems.push(newItem);
     DBManager.updateMenuItems(menuItems);
+
+    // Sync to Supabase
+    await upsertSupabaseMenuItem(newItem);
+
     res.status(201).json(newItem);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
 });
 
-app.put('/api/menu-items/:id', requireAdmin, (req, res) => {
+app.put('/api/menu-items/:id', requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     const { name, description, price, categoryId, image, isVeg, isNonVeg, spiceLevel, isDraft } = req.body;
@@ -227,13 +341,17 @@ app.put('/api/menu-items/:id', requireAdmin, (req, res) => {
     };
 
     DBManager.updateMenuItems(menuItems);
+
+    // Sync to Supabase
+    await upsertSupabaseMenuItem(menuItems[itemIndex]);
+
     res.json(menuItems[itemIndex]);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
 });
 
-app.delete('/api/menu-items/:id', requireAdmin, (req, res) => {
+app.delete('/api/menu-items/:id', requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     const menuItems = DBManager.getMenuItems();
@@ -244,6 +362,10 @@ app.delete('/api/menu-items/:id', requireAdmin, (req, res) => {
     }
 
     DBManager.updateMenuItems(filtered);
+
+    // Sync to Supabase
+    await deleteSupabaseMenuItem(id);
+
     res.json({ success: true, message: 'Menu item deleted successfully' });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -264,11 +386,16 @@ app.get('/api/website-content', async (req, res) => {
   }
 });
 
-app.put('/api/website-content', requireAdmin, (req, res) => {
+app.put('/api/website-content', requireAdmin, async (req, res) => {
   try {
     const { heroBanner, aboutSection, contactInfo, gallery } = req.body;
     DBManager.updateWebsiteContent({ heroBanner, aboutSection, contactInfo, gallery });
-    res.json({ success: true, content: DBManager.getWebsiteContent() });
+    
+    // Sync to Supabase
+    const updatedContent = DBManager.getWebsiteContent();
+    await upsertSupabaseWebsiteContent(updatedContent);
+
+    res.json({ success: true, content: updatedContent });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }

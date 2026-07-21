@@ -2,9 +2,10 @@ import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   BarChart3, LayoutGrid, FileText, Settings2, Trash2, Edit3, 
-  Plus, Save, Eye, CheckCircle, FilePlus, Loader2, Sparkles, AlertCircle, X, Check, EyeOff, UploadCloud, Info
+  Plus, Save, Eye, CheckCircle, FilePlus, Loader2, Sparkles, AlertCircle, X, Check, EyeOff, UploadCloud, Info, Search
 } from 'lucide-react';
 import { Category, MenuItem, WebsiteContent, ContactInfo } from '../types';
+import ConfirmationDialog from './ConfirmationDialog';
 
 interface AdminDashboardProps {
   categories: Category[];
@@ -45,11 +46,86 @@ export default function AdminDashboard({
     isDraft: false
   });
 
+  // Selection states
+  const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
+  const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>([]);
+
+  // Search query states
+  const [itemSearchQuery, setItemSearchQuery] = useState<string>('');
+  const [categorySearchQuery, setCategorySearchQuery] = useState<string>('');
+
+  // Filtered menu items
+  const filteredMenuItems = useMemo(() => {
+    if (!itemSearchQuery.trim()) return menuItems;
+    const query = itemSearchQuery.toLowerCase();
+    return menuItems.filter(item => 
+      item.name.toLowerCase().includes(query) || 
+      (item.description && item.description.toLowerCase().includes(query)) ||
+      categories.find(c => c.id === item.categoryId)?.name.toLowerCase().includes(query)
+    );
+  }, [menuItems, itemSearchQuery, categories]);
+
+  // Filtered categories
+  const filteredCategories = useMemo(() => {
+    if (!categorySearchQuery.trim()) return categories;
+    const query = categorySearchQuery.toLowerCase();
+    return categories.filter(cat => 
+      cat.name.toLowerCase().includes(query) || 
+      cat.slug.toLowerCase().includes(query)
+    );
+  }, [categories, categorySearchQuery]);
+
+  // Premium Toast Notification State
+  const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+  const showToast = (text: string, type: 'success' | 'error' = 'success') => {
+    setToastMessage({ text, type });
+    setTimeout(() => setToastMessage(null), 3000);
+  };
+
+  // Confirmation Dialog State
+  const [confirmDialog, setConfirmDialog] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void | Promise<void>;
+    confirmLabel?: string;
+    isDanger?: boolean;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {}
+  });
+
+  const confirmAction = (
+    title: string,
+    message: string,
+    onConfirm: () => void | Promise<void>,
+    confirmLabel = 'Delete',
+    isDanger = true
+  ) => {
+    setConfirmDialog({
+      isOpen: true,
+      title,
+      message,
+      onConfirm,
+      confirmLabel,
+      isDanger
+    });
+  };
+
   // New category form state
   const [categoryName, setCategoryName] = useState<string>('');
 
   // Website content form state
-  const [contentForm, setContentForm] = useState<WebsiteContent>({ ...websiteContent });
+  const [contentForm, setContentForm] = useState<WebsiteContent>({
+    restaurantName: websiteContent.restaurantName || 'HOKAI',
+    restaurantSubtitle: websiteContent.restaurantSubtitle || 'Pan-Asian Kitchen',
+    heroBanner: websiteContent.heroBanner,
+    aboutSection: websiteContent.aboutSection,
+    contactInfo: websiteContent.contactInfo,
+    gallery: websiteContent.gallery
+  });
 
   // PDF Parser States
   const [pdfFile, setPdfFile] = useState<File | null>(null);
@@ -104,29 +180,103 @@ export default function AdminDashboard({
       setIsAddingItem(false);
       onRefreshData();
       setLastUpdated(new Date().toLocaleTimeString());
+      showToast(editingItem ? 'Dish updated successfully!' : 'Exquisite dish created successfully!', 'success');
     } catch (err: any) {
-      alert(err.message);
+      showToast(err.message, 'error');
     }
   };
 
-  const handleDeleteItem = async (id: string) => {
-    if (!confirm('Are you absolutely sure you want to delete this exquisite dish?')) return;
-    try {
-      const response = await fetch(`/api/menu-items/${id}`, {
-        method: 'DELETE',
-        headers
-      });
+  const handleDeleteItem = (id: string) => {
+    confirmAction(
+      'Delete Dish',
+      'Are you absolutely sure you want to delete this exquisite dish? This action cannot be undone.',
+      async () => {
+        try {
+          const response = await fetch(`/api/menu-items/${id}`, {
+            method: 'DELETE',
+            headers
+          });
 
-      if (!response.ok) {
-        const err = await response.json();
-        throw new Error(err.error || 'Failed to delete menu item.');
-      }
+          if (!response.ok) {
+            const err = await response.json();
+            throw new Error(err.error || 'Failed to delete menu item.');
+          }
 
-      onRefreshData();
-      setLastUpdated(new Date().toLocaleTimeString());
-    } catch (err: any) {
-      alert(err.message);
+          // Remove from selected list if present
+          setSelectedItemIds(prev => prev.filter(x => x !== id));
+          onRefreshData();
+          setLastUpdated(new Date().toLocaleTimeString());
+          showToast('Dish successfully removed!', 'success');
+        } catch (err: any) {
+          showToast(err.message, 'error');
+        }
+      },
+      'Delete',
+      true
+    );
+  };
+
+  const handleBulkDeleteItems = () => {
+    if (selectedItemIds.length === 0) {
+      showToast('No items selected for bulk deletion.', 'error');
+      return;
     }
+    confirmAction(
+      'Bulk Delete Dishes',
+      `Are you absolutely sure you want to delete the ${selectedItemIds.length} selected dishes? This action cannot be undone.`,
+      async () => {
+        try {
+          const response = await fetch('/api/menu-items/bulk-delete', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ ids: selectedItemIds })
+          });
+
+          if (!response.ok) {
+            const err = await response.json();
+            throw new Error(err.error || 'Failed to delete selected items.');
+          }
+
+          setSelectedItemIds([]);
+          onRefreshData();
+          setLastUpdated(new Date().toLocaleTimeString());
+          showToast(`${selectedItemIds.length} dishes successfully deleted!`, 'success');
+        } catch (err: any) {
+          showToast(err.message, 'error');
+        }
+      },
+      'Delete Selected',
+      true
+    );
+  };
+
+  const handleDeleteAllItems = () => {
+    confirmAction(
+      'Delete All Dishes',
+      'CRITICAL WARNING: This will permanently delete ALL menu items from the database! Are you absolutely sure?',
+      async () => {
+        try {
+          const response = await fetch('/api/menu-items/all', {
+            method: 'DELETE',
+            headers
+          });
+
+          if (!response.ok) {
+            const err = await response.json();
+            throw new Error(err.error || 'Failed to clear all menu items.');
+          }
+
+          setSelectedItemIds([]);
+          onRefreshData();
+          setLastUpdated(new Date().toLocaleTimeString());
+          showToast('All menu items cleared successfully!', 'success');
+        } catch (err: any) {
+          showToast(err.message, 'error');
+        }
+      },
+      'Delete All',
+      true
+    );
   };
 
   const handleEditItemClick = (item: MenuItem) => {
@@ -167,8 +317,10 @@ export default function AdminDashboard({
       try {
         const base64 = await fileToBase64(e.target.files[0]);
         setItemForm(prev => ({ ...prev, image: base64 }));
+        showToast('Image uploaded and optimized!', 'success');
       } catch (err) {
         console.error('Error loading image file:', err);
+        showToast('Failed to parse uploaded image.', 'error');
       }
     }
   };
@@ -198,29 +350,103 @@ export default function AdminDashboard({
       setCategoryName('');
       onRefreshData();
       setLastUpdated(new Date().toLocaleTimeString());
+      showToast(editingCategory ? 'Category updated successfully!' : 'Category created successfully!', 'success');
     } catch (err: any) {
-      alert(err.message);
+      showToast(err.message, 'error');
     }
   };
 
-  const handleDeleteCategory = async (id: string) => {
-    if (!confirm('Warning: Deleting this category will delete all items belonging to it! Are you sure?')) return;
-    try {
-      const response = await fetch(`/api/categories/${id}`, {
-        method: 'DELETE',
-        headers
-      });
+  const handleDeleteCategory = (id: string) => {
+    confirmAction(
+      'Delete Category',
+      'Warning: Deleting this category will delete all items belonging to it! Are you absolutely sure?',
+      async () => {
+        try {
+          const response = await fetch(`/api/categories/${id}`, {
+            method: 'DELETE',
+            headers
+          });
 
-      if (!response.ok) {
-        const err = await response.json();
-        throw new Error(err.error || 'Failed to delete category.');
-      }
+          if (!response.ok) {
+            const err = await response.json();
+            throw new Error(err.error || 'Failed to delete category.');
+          }
 
-      onRefreshData();
-      setLastUpdated(new Date().toLocaleTimeString());
-    } catch (err: any) {
-      alert(err.message);
+          // Remove from selected list if present
+          setSelectedCategoryIds(prev => prev.filter(x => x !== id));
+          onRefreshData();
+          setLastUpdated(new Date().toLocaleTimeString());
+          showToast('Category and its items deleted successfully!', 'success');
+        } catch (err: any) {
+          showToast(err.message, 'error');
+        }
+      },
+      'Delete',
+      true
+    );
+  };
+
+  const handleBulkDeleteCategories = () => {
+    if (selectedCategoryIds.length === 0) {
+      showToast('No categories selected for bulk deletion.', 'error');
+      return;
     }
+    confirmAction(
+      'Bulk Delete Categories',
+      `Warning: Deleting these ${selectedCategoryIds.length} categories will also delete all associated menu dishes! Are you absolutely sure?`,
+      async () => {
+        try {
+          const response = await fetch('/api/categories/bulk-delete', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ ids: selectedCategoryIds })
+          });
+
+          if (!response.ok) {
+            const err = await response.json();
+            throw new Error(err.error || 'Failed to delete selected categories.');
+          }
+
+          setSelectedCategoryIds([]);
+          onRefreshData();
+          setLastUpdated(new Date().toLocaleTimeString());
+          showToast(`${selectedCategoryIds.length} categories deleted successfully!`, 'success');
+        } catch (err: any) {
+          showToast(err.message, 'error');
+        }
+      },
+      'Delete Selected',
+      true
+    );
+  };
+
+  const handleDeleteAllCategories = () => {
+    confirmAction(
+      'Delete All Categories',
+      'CRITICAL WARNING: This will permanently delete ALL categories AND ALL menu items! Are you absolutely sure?',
+      async () => {
+        try {
+          const response = await fetch('/api/categories/all', {
+            method: 'DELETE',
+            headers
+          });
+
+          if (!response.ok) {
+            const err = await response.json();
+            throw new Error(err.error || 'Failed to clear all categories.');
+          }
+
+          setSelectedCategoryIds([]);
+          onRefreshData();
+          setLastUpdated(new Date().toLocaleTimeString());
+          showToast('All categories and items deleted successfully!', 'success');
+        } catch (err: any) {
+          showToast(err.message, 'error');
+        }
+      },
+      'Delete All',
+      true
+    );
   };
 
   // Website Content Form
@@ -240,9 +466,9 @@ export default function AdminDashboard({
 
       onRefreshData();
       setLastUpdated(new Date().toLocaleTimeString());
-      alert('Website Content updated successfully!');
+      showToast('Website brand settings updated successfully!', 'success');
     } catch (err: any) {
-      alert(err.message);
+      showToast(err.message, 'error');
     }
   };
 
@@ -374,7 +600,30 @@ export default function AdminDashboard({
   };
 
   return (
-    <div className="min-h-screen bg-[#0B0B0B] text-white pt-24 pb-16">
+    <div className="min-h-screen bg-[#0B0B0B] text-white pt-24 pb-16 relative">
+      {/* Premium Success/Error Toast notification */}
+      <AnimatePresence>
+        {toastMessage && (
+          <motion.div
+            initial={{ opacity: 0, y: -50, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -50, scale: 0.95 }}
+            className={`fixed top-6 right-6 z-50 flex items-center gap-3 px-5 py-3 rounded-xl border shadow-2xl backdrop-blur-md ${
+              toastMessage.type === 'success'
+                ? 'bg-[#121212]/95 border-emerald-500/50 text-emerald-300'
+                : 'bg-[#121212]/95 border-red-500/50 text-red-300'
+            }`}
+          >
+            {toastMessage.type === 'success' ? (
+              <Check className="w-4 h-4 text-emerald-400" />
+            ) : (
+              <AlertCircle className="w-4 h-4 text-red-400" />
+            )}
+            <span className="text-xs font-semibold uppercase tracking-wider">{toastMessage.text}</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <div className="max-w-7xl mx-auto px-4">
         
         {/* Navigation & Header */}
@@ -535,6 +784,29 @@ export default function AdminDashboard({
                   )}
                 </div>
 
+                {/* Premium Search Bar */}
+                <div className="relative mb-6">
+                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+                    <Search className="h-4 w-4 text-white/40" />
+                  </div>
+                  <input
+                    type="text"
+                    value={itemSearchQuery}
+                    onChange={(e) => setItemSearchQuery(e.target.value)}
+                    placeholder="Search dishes by name, description, category..."
+                    className="block w-full pl-10 pr-10 py-3 bg-[#0B0B0B] border border-white/10 rounded-xl text-white placeholder-white/40 text-xs sm:text-sm focus:outline-none focus:border-[#D4AF37] focus:ring-1 focus:ring-[#D4AF37] transition-all"
+                  />
+                  {itemSearchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setItemSearchQuery('')}
+                      className="absolute inset-y-0 right-0 pr-3 flex items-center text-white/40 hover:text-white transition-colors"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
+
                 {/* Adding or Editing Item Form */}
                 <AnimatePresence>
                   {isAddingItem && (
@@ -687,16 +959,89 @@ export default function AdminDashboard({
                   )}
                 </AnimatePresence>
 
+                {/* Selection and control bar for bulk actions */}
+                {filteredMenuItems.length > 0 && (
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-white/5 border border-white/5 p-4 rounded-2xl mb-4 text-xs">
+                    <div className="flex items-center gap-3">
+                      <label className="flex items-center gap-2 cursor-pointer text-white/70 font-semibold uppercase tracking-wider">
+                        <input
+                          type="checkbox"
+                          checked={filteredMenuItems.length > 0 && filteredMenuItems.every(i => selectedItemIds.includes(i.id))}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              const filteredIds = filteredMenuItems.map(i => i.id);
+                              setSelectedItemIds(prev => Array.from(new Set([...prev, ...filteredIds])));
+                            } else {
+                              const filteredIds = filteredMenuItems.map(i => i.id);
+                              setSelectedItemIds(prev => prev.filter(id => !filteredIds.includes(id)));
+                            }
+                          }}
+                          className="rounded border-white/20 text-[#D4AF37] focus:ring-0 w-4 h-4"
+                        />
+                        Select All
+                      </label>
+                      <span className="text-white/40 font-mono">({selectedItemIds.length} Selected)</span>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2 w-full sm:w-auto">
+                      <button
+                        onClick={handleBulkDeleteItems}
+                        disabled={selectedItemIds.length === 0}
+                        className={`px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all border ${
+                          selectedItemIds.length > 0
+                            ? 'bg-red-950/40 hover:bg-red-900/40 border-red-500/40 text-red-300 cursor-pointer'
+                            : 'bg-white/5 border-white/5 text-white/30 cursor-not-allowed'
+                        }`}
+                      >
+                        Bulk Delete Selected
+                      </button>
+                      <button
+                        onClick={handleDeleteAllItems}
+                        className="px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-wider bg-transparent hover:bg-red-950/20 border border-red-500/30 text-red-400 transition-all cursor-pointer ml-auto sm:ml-0"
+                      >
+                        Delete All Items
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Empty State for Search */}
+                {filteredMenuItems.length === 0 && (
+                  <div className="p-8 text-center bg-[#0B0B0B]/60 border border-white/5 rounded-2xl">
+                    <p className="text-white/50 text-sm font-sans mb-3">No dishes matched your search criteria.</p>
+                    <button
+                      onClick={() => setItemSearchQuery('')}
+                      className="px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-bold text-[10px] uppercase tracking-wider rounded-xl transition-all"
+                    >
+                      Clear Search
+                    </button>
+                  </div>
+                )}
+
                 {/* Items grid for admin control */}
                 <div className="space-y-3">
-                  {menuItems.map(item => {
+                  {filteredMenuItems.map(item => {
                     const cat = categories.find(c => c.id === item.categoryId);
                     return (
                       <div 
                         key={item.id}
-                        className="bg-[#0B0B0B] border border-white/5 rounded-2xl p-3 flex items-center justify-between gap-4"
+                        className={`bg-[#0B0B0B] border rounded-2xl p-3 flex items-center justify-between gap-4 transition-all ${
+                          selectedItemIds.includes(item.id) ? 'border-[#D4AF37]/50 bg-[#D4AF37]/5' : 'border-white/5'
+                        }`}
                       >
                         <div className="flex items-center gap-3">
+                          <input
+                            type="checkbox"
+                            checked={selectedItemIds.includes(item.id)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedItemIds(prev => [...prev, item.id]);
+                              } else {
+                                setSelectedItemIds(prev => prev.filter(id => id !== item.id));
+                              }
+                            }}
+                            className="rounded border-white/20 text-[#D4AF37] focus:ring-0 w-4 h-4 flex-shrink-0 cursor-pointer"
+                          />
                           <img 
                             src={item.image} 
                             alt={item.name} 
@@ -764,6 +1109,29 @@ export default function AdminDashboard({
                   )}
                 </div>
 
+                {/* Premium Search Bar */}
+                <div className="relative mb-6">
+                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+                    <Search className="h-4 w-4 text-white/40" />
+                  </div>
+                  <input
+                    type="text"
+                    value={categorySearchQuery}
+                    onChange={(e) => setCategorySearchQuery(e.target.value)}
+                    placeholder="Search categories by name or slug..."
+                    className="block w-full pl-10 pr-10 py-3 bg-[#0B0B0B] border border-white/10 rounded-xl text-white placeholder-white/40 text-xs sm:text-sm focus:outline-none focus:border-[#D4AF37] focus:ring-1 focus:ring-[#D4AF37] transition-all"
+                  />
+                  {categorySearchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setCategorySearchQuery('')}
+                      className="absolute inset-y-0 right-0 pr-3 flex items-center text-white/40 hover:text-white transition-colors"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
+
                 {/* Add/Edit Category Form */}
                 <AnimatePresence>
                   {isAddingCategory && (
@@ -804,16 +1172,91 @@ export default function AdminDashboard({
                   )}
                 </AnimatePresence>
 
+                {/* Selection and control bar for bulk actions */}
+                {filteredCategories.length > 0 && (
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-white/5 border border-white/5 p-4 rounded-2xl mb-4 text-xs">
+                    <div className="flex items-center gap-3">
+                      <label className="flex items-center gap-2 cursor-pointer text-white/70 font-semibold uppercase tracking-wider">
+                        <input
+                          type="checkbox"
+                          checked={filteredCategories.length > 0 && filteredCategories.every(c => selectedCategoryIds.includes(c.id))}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              const filteredIds = filteredCategories.map(c => c.id);
+                              setSelectedCategoryIds(prev => Array.from(new Set([...prev, ...filteredIds])));
+                            } else {
+                              const filteredIds = filteredCategories.map(c => c.id);
+                              setSelectedCategoryIds(prev => prev.filter(id => !filteredIds.includes(id)));
+                            }
+                          }}
+                          className="rounded border-white/20 text-[#D4AF37] focus:ring-0 w-4 h-4"
+                        />
+                        Select All
+                      </label>
+                      <span className="text-white/40 font-mono">({selectedCategoryIds.length} Selected)</span>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2 w-full sm:w-auto">
+                      <button
+                        onClick={handleBulkDeleteCategories}
+                        disabled={selectedCategoryIds.length === 0}
+                        className={`px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all border ${
+                          selectedCategoryIds.length > 0
+                            ? 'bg-red-950/40 hover:bg-red-900/40 border-red-500/40 text-red-300 cursor-pointer'
+                            : 'bg-white/5 border-white/5 text-white/30 cursor-not-allowed'
+                        }`}
+                      >
+                        Bulk Delete Selected
+                      </button>
+                      <button
+                        onClick={handleDeleteAllCategories}
+                        className="px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-wider bg-transparent hover:bg-red-950/20 border border-red-500/30 text-red-400 transition-all cursor-pointer ml-auto sm:ml-0"
+                      >
+                        Delete All Categories
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Empty State for Search */}
+                {filteredCategories.length === 0 && (
+                  <div className="p-8 text-center bg-[#0B0B0B]/60 border border-white/5 rounded-2xl">
+                    <p className="text-white/50 text-sm font-sans mb-3">No categories matched your search criteria.</p>
+                    <button
+                      onClick={() => setCategorySearchQuery('')}
+                      className="px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-bold text-[10px] uppercase tracking-wider rounded-xl transition-all"
+                    >
+                      Clear Search
+                    </button>
+                  </div>
+                )}
+
                 {/* Categories listings */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {categories.map(cat => (
+                  {filteredCategories.map(cat => (
                     <div 
                       key={cat.id}
-                      className="bg-[#0B0B0B] border border-white/5 rounded-2xl p-4 flex items-center justify-between"
+                      className={`bg-[#0B0B0B] border rounded-2xl p-4 flex items-center justify-between transition-all ${
+                        selectedCategoryIds.includes(cat.id) ? 'border-[#D4AF37]/50 bg-[#D4AF37]/5' : 'border-white/5'
+                      }`}
                     >
-                      <div>
-                        <span className="text-white text-base font-bold tracking-wide">{cat.name}</span>
-                        <span className="block text-white/40 text-[10px] font-mono mt-0.5">slug: {cat.slug}</span>
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="checkbox"
+                          checked={selectedCategoryIds.includes(cat.id)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedCategoryIds(prev => [...prev, cat.id]);
+                            } else {
+                              setSelectedCategoryIds(prev => prev.filter(id => id !== cat.id));
+                            }
+                          }}
+                          className="rounded border-white/20 text-[#D4AF37] focus:ring-0 w-4 h-4 cursor-pointer"
+                        />
+                        <div>
+                          <span className="text-white text-base font-bold tracking-wide block">{cat.name}</span>
+                          <span className="block text-white/40 text-[10px] font-mono mt-0.5">slug: {cat.slug}</span>
+                        </div>
                       </div>
 
                       <div className="flex gap-1.5">
@@ -1071,6 +1514,34 @@ export default function AdminDashboard({
                   Branding & Narrative Settings
                 </h2>
 
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-white/5 p-4 rounded-2xl border border-white/5">
+                  {/* Restaurant Name */}
+                  <div>
+                    <label className="block text-white/50 text-[10px] uppercase font-semibold tracking-wider mb-2">Restaurant Name</label>
+                    <input
+                      type="text"
+                      required
+                      value={contentForm.restaurantName || ''}
+                      onChange={(e) => setContentForm(p => ({ ...p, restaurantName: e.target.value }))}
+                      placeholder="HOKAI"
+                      className="w-full bg-[#0B0B0B] border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:border-[#D4AF37]"
+                    />
+                  </div>
+
+                  {/* Restaurant Subtitle */}
+                  <div>
+                    <label className="block text-white/50 text-[10px] uppercase font-semibold tracking-wider mb-2">Restaurant Subtitle</label>
+                    <input
+                      type="text"
+                      required
+                      value={contentForm.restaurantSubtitle || ''}
+                      onChange={(e) => setContentForm(p => ({ ...p, restaurantSubtitle: e.target.value }))}
+                      placeholder="Pan-Asian Kitchen"
+                      className="w-full bg-[#0B0B0B] border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:border-[#D4AF37]"
+                    />
+                  </div>
+                </div>
+
                 {/* Hero Banner Image */}
                 <div>
                   <label className="block text-white/50 text-[10px] uppercase font-semibold tracking-wider mb-2">Homepage Hero Cover URL</label>
@@ -1258,6 +1729,16 @@ export default function AdminDashboard({
           </div>
         </div>
       </div>
+
+      <ConfirmationDialog
+        isOpen={confirmDialog.isOpen}
+        title={confirmDialog.title}
+        message={confirmDialog.message}
+        confirmLabel={confirmDialog.confirmLabel}
+        isDanger={confirmDialog.isDanger}
+        onConfirm={confirmDialog.onConfirm}
+        onClose={() => setConfirmDialog(p => ({ ...p, isOpen: false }))}
+      />
     </div>
   );
 }

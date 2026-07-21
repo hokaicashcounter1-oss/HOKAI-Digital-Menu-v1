@@ -28,6 +28,8 @@ export interface ContactInfo {
 }
 
 export interface WebsiteContent {
+  restaurantName?: string;
+  restaurantSubtitle?: string;
   heroBanner: string;
   aboutSection: string;
   contactInfo: ContactInfo;
