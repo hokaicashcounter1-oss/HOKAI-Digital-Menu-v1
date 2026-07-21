@@ -1,0 +1,8 @@
+{
+  "name": "HOKAI - Pan-Asian Kitchen",
+  "description": "A luxury, mobile-first Pan-Asian digital menu website for smartphone users, featuring dynamic category filtering, search, interactive admin control panel, and AI PDF menu importing.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
