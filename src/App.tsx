@@ -8,6 +8,9 @@ import {
 // Import Types
 import { Category, MenuItem, WebsiteContent } from './types';
 
+// Import Fallback Mock Data
+import { fallbackCategories, fallbackMenuItems, fallbackWebsiteContent } from './mockData';
+
 // Import Custom Modular Components
 import HeroSection from './components/HeroSection';
 import MenuSection from './components/MenuSection';
@@ -33,23 +36,51 @@ export default function App() {
   // Load website data
   const loadData = async () => {
     try {
-      const [catRes, itemRes, contentRes] = await Promise.all([
-        fetch('/api/categories'),
-        fetch('/api/menu-items'),
-        fetch('/api/website-content')
-      ]);
+      let catData = fallbackCategories;
+      let itemData = fallbackMenuItems;
+      let contentData = fallbackWebsiteContent;
 
-      if (catRes.ok && itemRes.ok && contentRes.ok) {
-        const catData = await catRes.json();
-        const itemData = await itemRes.json();
-        const contentData = await contentRes.json();
-
-        setCategories(catData);
-        setMenuItems(itemData);
-        setWebsiteContent(contentData);
+      try {
+        const catRes = await fetch('/api/categories');
+        if (catRes.ok) {
+          catData = await catRes.json();
+        } else {
+          console.warn(`[App] Failed to fetch categories: ${catRes.status}. Using fallback.`);
+        }
+      } catch (err) {
+        console.warn('[App] Error fetching categories. Using fallback.', err);
       }
+
+      try {
+        const itemRes = await fetch('/api/menu-items');
+        if (itemRes.ok) {
+          itemData = await itemRes.json();
+        } else {
+          console.warn(`[App] Failed to fetch menu-items: ${itemRes.status}. Using fallback.`);
+        }
+      } catch (err) {
+        console.warn('[App] Error fetching menu-items. Using fallback.', err);
+      }
+
+      try {
+        const contentRes = await fetch('/api/website-content');
+        if (contentRes.ok) {
+          contentData = await contentRes.json();
+        } else {
+          console.warn(`[App] Failed to fetch website-content: ${contentRes.status}. Using fallback.`);
+        }
+      } catch (err) {
+        console.warn('[App] Error fetching website-content. Using fallback.', err);
+      }
+
+      setCategories(catData || fallbackCategories);
+      setMenuItems(itemData || fallbackMenuItems);
+      setWebsiteContent(contentData || fallbackWebsiteContent);
     } catch (error) {
       console.error('Error fetching digital menu data:', error);
+      setCategories(fallbackCategories);
+      setMenuItems(fallbackMenuItems);
+      setWebsiteContent(fallbackWebsiteContent);
     } finally {
       setLoading(false);
     }

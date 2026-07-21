@@ -3,6 +3,7 @@ import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import { DBManager, Category, MenuItem } from './server/db.js';
 import { parseMenuPDF } from './server/gemini.js';
+import { getSupabaseCategories, getSupabaseMenuItems, getSupabaseWebsiteContent } from './server/supabase.js';
 
 // Define port
 const PORT = 3000;
@@ -65,8 +66,12 @@ async function startServer() {
   });
 
   // Categories endpoints
-  app.get('/api/categories', (req, res) => {
+  app.get('/api/categories', async (req, res) => {
     try {
+      const supabaseCategories = await getSupabaseCategories();
+      if (supabaseCategories) {
+        return res.json(supabaseCategories);
+      }
       const categories = DBManager.getCategories();
       res.json(categories);
     } catch (error: any) {
@@ -149,8 +154,12 @@ async function startServer() {
   });
 
   // Menu Items endpoints
-  app.get('/api/menu-items', (req, res) => {
+  app.get('/api/menu-items', async (req, res) => {
     try {
+      const supabaseMenuItems = await getSupabaseMenuItems();
+      if (supabaseMenuItems) {
+        return res.json(supabaseMenuItems);
+      }
       const items = DBManager.getMenuItems();
       res.json(items);
     } catch (error: any) {
@@ -234,8 +243,12 @@ async function startServer() {
   });
 
   // Website Content endpoints
-  app.get('/api/website-content', (req, res) => {
+  app.get('/api/website-content', async (req, res) => {
     try {
+      const supabaseContent = await getSupabaseWebsiteContent();
+      if (supabaseContent) {
+        return res.json(supabaseContent);
+      }
       const content = DBManager.getWebsiteContent();
       res.json(content);
     } catch (error: any) {
