@@ -319,7 +319,7 @@ const initialDb: DatabaseSchema = {
   websiteContent: initialWebsiteContent,
   adminSettings: {
     adminId: 'Ak732888',
-    passwordHash: 'Hokai@2026' // Storing plain text password as per explicit user admin setup
+    passwordHash: 'Ak732888' // Storing plain text password as per explicit user admin setup
   }
 };
 

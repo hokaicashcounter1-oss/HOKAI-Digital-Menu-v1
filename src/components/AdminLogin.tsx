@@ -74,7 +74,7 @@ export default function AdminLogin({ onLoginSuccess, onClose }: AdminLoginProps)
                 type="text"
                 value={adminId}
                 onChange={(e) => setAdminId(e.target.value)}
-                placeholder="e.g. Ak732888"
+                placeholder="Enter Your I'd"
                 className="w-full bg-black/40 border border-white/10 rounded-2xl py-3.5 pl-12 pr-4 text-white text-sm focus:outline-none focus:border-[#D4AF37] transition-all font-mono backdrop-blur-md"
                 required
               />
