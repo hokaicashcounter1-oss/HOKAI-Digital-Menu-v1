@@ -33,53 +33,51 @@ export default function App() {
   const [showLoginModal, setShowLoginModal] = useState<boolean>(false);
   const [isAdminMode, setIsAdminMode] = useState<boolean>(false);
 
-  // Load website data with a 2.5-second timeout safeguard to prevent infinite loading
+  // Load website data always directly from database with cache-busting
   const loadData = async () => {
-    const timeoutPromise = new Promise<void>((resolve) => {
-      setTimeout(() => {
-        console.warn('[App] API load timed out (2.5s). Falling back to local data.');
-        resolve();
-      }, 2500);
-    });
+    const timestamp = Date.now();
+    const fetchOptions: RequestInit = {
+      cache: 'no-store',
+      headers: {
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache'
+      }
+    };
 
     try {
-      let catData: Category[] = [];
-      let itemData: MenuItem[] = [];
+      let catData: Category[] | null = null;
+      let itemData: MenuItem[] | null = null;
       let contentData: WebsiteContent | null = null;
 
-      const fetchData = async () => {
-        try {
-          const catRes = await fetch('/api/categories');
-          if (catRes.ok) catData = await catRes.json();
-        } catch (err) {
-          console.warn('[App] Error fetching categories:', err);
-        }
+      try {
+        const catRes = await fetch(`/api/categories?t=${timestamp}`, fetchOptions);
+        if (catRes.ok) catData = await catRes.json();
+      } catch (err) {
+        console.warn('[App] Error fetching categories:', err);
+      }
 
-        try {
-          const itemRes = await fetch('/api/menu-items');
-          if (itemRes.ok) itemData = await itemRes.json();
-        } catch (err) {
-          console.warn('[App] Error fetching menu-items:', err);
-        }
+      try {
+        const itemRes = await fetch(`/api/menu-items?t=${timestamp}`, fetchOptions);
+        if (itemRes.ok) itemData = await itemRes.json();
+      } catch (err) {
+        console.warn('[App] Error fetching menu-items:', err);
+      }
 
-        try {
-          const contentRes = await fetch('/api/website-content');
-          if (contentRes.ok) contentData = await contentRes.json();
-        } catch (err) {
-          console.warn('[App] Error fetching website-content:', err);
-        }
-      };
+      try {
+        const contentRes = await fetch(`/api/website-content?t=${timestamp}`, fetchOptions);
+        if (contentRes.ok) contentData = await contentRes.json();
+      } catch (err) {
+        console.warn('[App] Error fetching website-content:', err);
+      }
 
-      // Race the actual fetch against our timeout promise
-      await Promise.race([fetchData(), timeoutPromise]);
-
-      setCategories(catData && catData.length > 0 ? catData : fallbackCategories);
-      setMenuItems(itemData && itemData.length > 0 ? itemData : fallbackMenuItems);
+      // Strictly set state to database response (or empty array). Never default to sample/mock menu data!
+      setCategories(Array.isArray(catData) ? catData : []);
+      setMenuItems(Array.isArray(itemData) ? itemData : []);
       setWebsiteContent(contentData || fallbackWebsiteContent);
     } catch (error) {
-      console.error('Error fetching digital menu data, using fallbacks:', error);
-      setCategories(fallbackCategories);
-      setMenuItems(fallbackMenuItems);
+      console.error('Error fetching digital menu data:', error);
+      setCategories([]);
+      setMenuItems([]);
       setWebsiteContent(fallbackWebsiteContent);
     } finally {
       setLoading(false);
@@ -338,7 +336,7 @@ export default function App() {
             />
             <MenuSection
               categories={categories}
-              menuItems={menuItems}
+              menuItems={menuItems.filter(item => !item.isDraft)}
             />
             <AboutSection
               aboutText={websiteContent.aboutSection}

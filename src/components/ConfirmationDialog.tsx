@@ -78,6 +78,7 @@ export default function ConfirmationDialog({
             {/* Action Buttons */}
             <div className="mt-6 flex items-center justify-end gap-3 border-t border-white/5 pt-4">
               <button
+                type="button"
                 onClick={onClose}
                 className="px-4 py-2 text-xs font-semibold uppercase tracking-wider text-white/60 hover:text-white bg-white/5 hover:bg-white/10 border border-white/5 rounded-xl transition-all cursor-pointer"
                 id="confirmation-dialog-cancel-btn"
@@ -85,9 +86,15 @@ export default function ConfirmationDialog({
                 {cancelLabel}
               </button>
               <button
-                onClick={() => {
-                  onConfirm();
-                  onClose();
+                type="button"
+                onClick={async () => {
+                  try {
+                    await onConfirm();
+                  } catch (err) {
+                    console.error('Action failed:', err);
+                  } finally {
+                    onClose();
+                  }
                 }}
                 className={`px-5 py-2 text-xs font-semibold uppercase tracking-wider rounded-xl transition-all shadow-lg hover:shadow-xl cursor-pointer ${
                   isDanger

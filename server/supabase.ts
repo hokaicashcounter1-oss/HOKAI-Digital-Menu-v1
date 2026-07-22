@@ -39,14 +39,14 @@ export async function getSupabaseCategories(): Promise<Category[] | null> {
       return null;
     }
 
-    if (data && data.length > 0) {
+    if (data) {
       return data.map((cat: any) => ({
         id: cat.id,
         name: cat.name,
         slug: cat.slug || cat.name.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-')
       }));
     }
-    return null;
+    return [];
   } catch (err: any) {
     console.warn('[Supabase] Exception during categories fetch:', err.message || err);
     return null;
@@ -67,7 +67,7 @@ export async function getSupabaseMenuItems(): Promise<MenuItem[] | null> {
       return null;
     }
 
-    if (data && data.length > 0) {
+    if (data) {
       return data.map((item: any) => ({
         id: item.id,
         name: item.name,
@@ -75,13 +75,14 @@ export async function getSupabaseMenuItems(): Promise<MenuItem[] | null> {
         price: parseFloat(item.price) || 0,
         categoryId: item.categoryId || item.category_id || '',
         image: item.image || '',
+        images: Array.isArray(item.images) ? item.images : (item.image ? [item.image] : []),
         isVeg: item.isVeg !== undefined ? !!item.isVeg : !!item.is_veg,
         isNonVeg: item.isNonVeg !== undefined ? !!item.isNonVeg : !!item.is_non_veg,
         spiceLevel: parseInt(item.spiceLevel !== undefined ? item.spiceLevel : item.spice_level) || 0,
         isDraft: item.isDraft !== undefined ? !!item.isDraft : !!item.is_draft
       }));
     }
-    return null;
+    return [];
   } catch (err: any) {
     console.warn('[Supabase] Exception during menu items fetch:', err.message || err);
     return null;
@@ -207,6 +208,7 @@ export async function upsertSupabaseMenuItem(item: MenuItem): Promise<boolean> {
       price: item.price,
       categoryId: item.categoryId,
       image: item.image,
+      images: item.images || [item.image],
       isVeg: item.isVeg,
       isNonVeg: item.isNonVeg,
       spiceLevel: item.spiceLevel,
@@ -225,6 +227,7 @@ export async function upsertSupabaseMenuItem(item: MenuItem): Promise<boolean> {
       price: item.price,
       category_id: item.categoryId,
       image: item.image,
+      images: item.images || [item.image],
       is_veg: item.isVeg,
       is_non_veg: item.isNonVeg,
       spice_level: item.spiceLevel,

@@ -15,9 +15,13 @@ export interface MenuItem {
   price: number;
   categoryId: string;
   image: string;
+  images?: string[]; // Array of 5 photography angles/views
+  verifiedImages?: any[];
+  isCustomDish?: boolean;
+  photoMessage?: string;
   isVeg: boolean;
   isNonVeg: boolean;
-  spiceLevel: number; // 0 to 3
+  spiceLevel: number; // 0 to 5
   isDraft: boolean;
 }
 

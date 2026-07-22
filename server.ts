@@ -2,8 +2,21 @@ import express from 'express';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import { DBManager, Category, MenuItem } from './server/db.js';
-import { parseMenuPDF } from './server/gemini.js';
-import { getSupabaseCategories, getSupabaseMenuItems, getSupabaseWebsiteContent } from './server/supabase.js';
+import { parseMenuPDF, generateItemImages, detectSpiceLevel, searchVerifiedRealFoodPhotos, verifyImageAuthenticity, isCustomOrUniqueDish } from './server/gemini.js';
+import { 
+  getSupabaseCategories, 
+  getSupabaseMenuItems, 
+  getSupabaseWebsiteContent,
+  deleteSupabaseCategory,
+  deleteSupabaseCategories,
+  deleteAllSupabaseCategories,
+  deleteSupabaseMenuItem,
+  deleteSupabaseMenuItems,
+  deleteAllSupabaseMenuItems,
+  upsertSupabaseCategory,
+  upsertSupabaseMenuItem,
+  upsertSupabaseWebsiteContent
+} from './server/supabase.js';
 
 // Define port
 const PORT = 3000;
@@ -68,8 +81,12 @@ async function startServer() {
   // Categories endpoints
   app.get('/api/categories', async (req, res) => {
     try {
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+
       const supabaseCategories = await getSupabaseCategories();
-      if (supabaseCategories) {
+      if (supabaseCategories !== null) {
         return res.json(supabaseCategories);
       }
       const categories = DBManager.getCategories();
@@ -79,7 +96,7 @@ async function startServer() {
     }
   });
 
-  app.post('/api/categories', requireAdmin, (req, res) => {
+  app.post('/api/categories', requireAdmin, async (req, res) => {
     try {
       const { name } = req.body;
       if (!name) return res.status(400).json({ error: 'Category name is required' });
@@ -100,13 +117,14 @@ async function startServer() {
 
       categories.push(newCategory);
       DBManager.updateCategories(categories);
+      await upsertSupabaseCategory(newCategory);
       res.status(201).json(newCategory);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
   });
 
-  app.put('/api/categories/:id', requireAdmin, (req, res) => {
+  app.put('/api/categories/:id', requireAdmin, async (req, res) => {
     try {
       const { id } = req.params;
       const { name } = req.body;
@@ -124,28 +142,64 @@ async function startServer() {
       };
 
       DBManager.updateCategories(categories);
+      await upsertSupabaseCategory(categories[catIndex]);
       res.json(categories[catIndex]);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
   });
 
-  app.delete('/api/categories/:id', requireAdmin, (req, res) => {
+  app.post('/api/categories/bulk-delete', requireAdmin, async (req, res) => {
+    try {
+      const { ids } = req.body;
+      if (!Array.isArray(ids)) {
+        return res.status(400).json({ error: 'ids array is required' });
+      }
+
+      const categories = DBManager.getCategories();
+      const filteredCategories = categories.filter(c => !ids.includes(c.id));
+      
+      const menuItems = DBManager.getMenuItems();
+      const filteredItems = menuItems.filter(item => !ids.includes(item.categoryId));
+
+      DBManager.updateCategories(filteredCategories);
+      DBManager.updateMenuItems(filteredItems);
+
+      await deleteSupabaseCategories(ids);
+
+      res.json({ success: true, message: 'Selected categories deleted successfully' });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.delete('/api/categories/all', requireAdmin, async (req, res) => {
+    try {
+      DBManager.updateCategories([]);
+      DBManager.updateMenuItems([]);
+
+      await deleteAllSupabaseCategories();
+      await deleteAllSupabaseMenuItems();
+
+      res.json({ success: true, message: 'All categories and menu items deleted successfully' });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.delete('/api/categories/:id', requireAdmin, async (req, res) => {
     try {
       const { id } = req.params;
       const categories = DBManager.getCategories();
       const filteredCategories = categories.filter(c => c.id !== id);
 
-      if (categories.length === filteredCategories.length) {
-        return res.status(404).json({ error: 'Category not found' });
-      }
-
-      // Also clean up or migrate items associated with this category
       const menuItems = DBManager.getMenuItems();
       const filteredItems = menuItems.filter(item => item.categoryId !== id);
       
       DBManager.updateCategories(filteredCategories);
       DBManager.updateMenuItems(filteredItems);
+
+      await deleteSupabaseCategory(id);
 
       res.json({ success: true, message: 'Category deleted and its associated items removed' });
     } catch (error: any) {
@@ -156,8 +210,12 @@ async function startServer() {
   // Menu Items endpoints
   app.get('/api/menu-items', async (req, res) => {
     try {
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+
       const supabaseMenuItems = await getSupabaseMenuItems();
-      if (supabaseMenuItems) {
+      if (supabaseMenuItems !== null) {
         return res.json(supabaseMenuItems);
       }
       const items = DBManager.getMenuItems();
@@ -167,12 +225,15 @@ async function startServer() {
     }
   });
 
-  app.post('/api/menu-items', requireAdmin, (req, res) => {
+  app.post('/api/menu-items', requireAdmin, async (req, res) => {
     try {
-      const { name, description, price, categoryId, image, isVeg, isNonVeg, spiceLevel, isDraft } = req.body;
-      if (!name || !price || !categoryId) {
+      const { name, description, price, categoryId, image, images, isVeg, isNonVeg, spiceLevel, isDraft } = req.body;
+      if (!name || price === undefined || !categoryId) {
         return res.status(400).json({ error: 'Name, Price and Category are required' });
       }
+
+      const primaryImage = image || (Array.isArray(images) && images[0]) || 'https://images.unsplash.com/photo-1544025162-d76694265947?q=80&w=600&auto=format&fit=crop';
+      const imageList = Array.isArray(images) && images.length > 0 ? images : [primaryImage];
 
       const menuItems = DBManager.getMenuItems();
       const newItem: MenuItem = {
@@ -181,7 +242,8 @@ async function startServer() {
         description: (description || '').trim(),
         price: parseFloat(price),
         categoryId,
-        image: image || 'https://images.unsplash.com/photo-1544025162-d76694265947?q=80&w=600&auto=format&fit=crop',
+        image: primaryImage,
+        images: imageList,
         isVeg: !!isVeg,
         isNonVeg: !!isNonVeg,
         spiceLevel: parseInt(spiceLevel) || 0,
@@ -190,20 +252,24 @@ async function startServer() {
 
       menuItems.push(newItem);
       DBManager.updateMenuItems(menuItems);
+      await upsertSupabaseMenuItem(newItem);
       res.status(201).json(newItem);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
   });
 
-  app.put('/api/menu-items/:id', requireAdmin, (req, res) => {
+  app.put('/api/menu-items/:id', requireAdmin, async (req, res) => {
     try {
       const { id } = req.params;
-      const { name, description, price, categoryId, image, isVeg, isNonVeg, spiceLevel, isDraft } = req.body;
+      const { name, description, price, categoryId, image, images, isVeg, isNonVeg, spiceLevel, isDraft } = req.body;
 
       const menuItems = DBManager.getMenuItems();
       const itemIndex = menuItems.findIndex(item => item.id === id);
       if (itemIndex === -1) return res.status(404).json({ error: 'Menu item not found' });
+
+      const primaryImage = image !== undefined ? image : (Array.isArray(images) && images[0]) || menuItems[itemIndex].image;
+      const imageList = Array.isArray(images) ? images : (menuItems[itemIndex].images || [primaryImage]);
 
       menuItems[itemIndex] = {
         ...menuItems[itemIndex],
@@ -211,7 +277,8 @@ async function startServer() {
         description: description !== undefined ? description.trim() : menuItems[itemIndex].description,
         price: price !== undefined ? parseFloat(price) : menuItems[itemIndex].price,
         categoryId: categoryId !== undefined ? categoryId : menuItems[itemIndex].categoryId,
-        image: image !== undefined ? image : menuItems[itemIndex].image,
+        image: primaryImage,
+        images: imageList,
         isVeg: isVeg !== undefined ? !!isVeg : menuItems[itemIndex].isVeg,
         isNonVeg: isNonVeg !== undefined ? !!isNonVeg : menuItems[itemIndex].isNonVeg,
         spiceLevel: spiceLevel !== undefined ? parseInt(spiceLevel) : menuItems[itemIndex].spiceLevel,
@@ -219,23 +286,104 @@ async function startServer() {
       };
 
       DBManager.updateMenuItems(menuItems);
+      await upsertSupabaseMenuItem(menuItems[itemIndex]);
       res.json(menuItems[itemIndex]);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
   });
 
-  app.delete('/api/menu-items/:id', requireAdmin, (req, res) => {
+  app.post('/api/menu-items/bulk-delete', requireAdmin, async (req, res) => {
+    try {
+      const { ids } = req.body;
+      if (!Array.isArray(ids)) {
+        return res.status(400).json({ error: 'ids array is required' });
+      }
+
+      const menuItems = DBManager.getMenuItems();
+      const filteredItems = menuItems.filter(item => !ids.includes(item.id));
+
+      DBManager.updateMenuItems(filteredItems);
+      await deleteSupabaseMenuItems(ids);
+
+      res.json({ success: true, message: 'Selected menu items deleted successfully' });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post('/api/menu-items/bulk-move-category', requireAdmin, async (req, res) => {
+    try {
+      const { ids, targetCategoryId } = req.body;
+      if (!Array.isArray(ids) || !targetCategoryId) {
+        return res.status(400).json({ error: 'ids array and targetCategoryId are required' });
+      }
+
+      const menuItems = DBManager.getMenuItems();
+      let updatedCount = 0;
+
+      for (let i = 0; i < menuItems.length; i++) {
+        if (ids.includes(menuItems[i].id)) {
+          menuItems[i].categoryId = targetCategoryId;
+          await upsertSupabaseMenuItem(menuItems[i]);
+          updatedCount++;
+        }
+      }
+
+      DBManager.updateMenuItems(menuItems);
+
+      res.json({ success: true, message: `Moved ${updatedCount} item(s) to new category successfully` });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post('/api/menu-items/bulk-publish', requireAdmin, async (req, res) => {
+    try {
+      const { ids } = req.body;
+      if (!Array.isArray(ids)) {
+        return res.status(400).json({ error: 'ids array is required' });
+      }
+
+      const menuItems = DBManager.getMenuItems();
+      let publishedCount = 0;
+
+      for (let i = 0; i < menuItems.length; i++) {
+        if (ids.includes(menuItems[i].id)) {
+          menuItems[i].isDraft = false;
+          await upsertSupabaseMenuItem(menuItems[i]);
+          publishedCount++;
+        }
+      }
+
+      DBManager.updateMenuItems(menuItems);
+
+      res.json({ success: true, message: `Published ${publishedCount} item(s) to live menu` });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.delete('/api/menu-items/all', requireAdmin, async (req, res) => {
+    try {
+      DBManager.updateMenuItems([]);
+      await deleteAllSupabaseMenuItems();
+
+      res.json({ success: true, message: 'All menu items cleared successfully' });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.delete('/api/menu-items/:id', requireAdmin, async (req, res) => {
     try {
       const { id } = req.params;
       const menuItems = DBManager.getMenuItems();
       const filtered = menuItems.filter(item => item.id !== id);
 
-      if (menuItems.length === filtered.length) {
-        return res.status(404).json({ error: 'Menu item not found' });
-      }
-
       DBManager.updateMenuItems(filtered);
+      await deleteSupabaseMenuItem(id);
+
       res.json({ success: true, message: 'Menu item deleted successfully' });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
@@ -245,6 +393,10 @@ async function startServer() {
   // Website Content endpoints
   app.get('/api/website-content', async (req, res) => {
     try {
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+
       const supabaseContent = await getSupabaseWebsiteContent();
       if (supabaseContent) {
         return res.json(supabaseContent);
@@ -256,11 +408,325 @@ async function startServer() {
     }
   });
 
-  app.put('/api/website-content', requireAdmin, (req, res) => {
+  app.put('/api/website-content', requireAdmin, async (req, res) => {
     try {
-      const { heroBanner, aboutSection, contactInfo, gallery } = req.body;
-      DBManager.updateWebsiteContent({ heroBanner, aboutSection, contactInfo, gallery });
+      const { heroBanner, aboutSection, contactInfo, gallery, restaurantName, restaurantSubtitle } = req.body;
+      const newContent = { heroBanner, aboutSection, contactInfo, gallery, restaurantName, restaurantSubtitle };
+      DBManager.updateWebsiteContent(newContent);
+      await upsertSupabaseWebsiteContent(newContent);
       res.json({ success: true, content: DBManager.getWebsiteContent() });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // POST /api/admin/verify-image - Verify an image URL against Food Image Authenticity System
+  app.post('/api/admin/verify-image', requireAdmin, (req, res) => {
+    try {
+      const { name, description, categoryName, url } = req.body || {};
+      if (!name || !url) {
+        return res.status(400).json({ error: 'Name and Image URL are required' });
+      }
+
+      const verificationResult = verifyImageAuthenticity(name, description || '', categoryName || '', url);
+      res.json(verificationResult);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Track last published timestamp
+  let lastPublishedAt: string = new Date().toISOString();
+
+  // POST /api/admin/save-draft - Save menu items and categories as DRAFT
+  app.post('/api/admin/save-draft', requireAdmin, async (req, res) => {
+    try {
+      const { items, menuItems, categories: newCategories } = req.body || {};
+      const rawItems = items || menuItems || (Array.isArray(req.body) ? req.body : []);
+
+      let currentCategories = DBManager.getCategories();
+
+      // 1. Ensure categories exist
+      if (Array.isArray(newCategories)) {
+        for (const cat of newCategories) {
+          if (!currentCategories.some(c => c.id === cat.id || c.name.toLowerCase() === cat.name.toLowerCase())) {
+            const newCat: Category = {
+              id: cat.id || `cat-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+              name: cat.name.trim(),
+              slug: cat.slug || cat.name.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-')
+            };
+            currentCategories.push(newCat);
+            await upsertSupabaseCategory(newCat);
+          }
+        }
+      }
+
+      // Check items for missing category IDs/names
+      if (Array.isArray(rawItems)) {
+        for (const item of rawItems) {
+          if (!item.categoryId && item.categoryName) {
+            let match = currentCategories.find(c => c.name.toLowerCase() === item.categoryName.toLowerCase());
+            if (!match) {
+              match = {
+                id: `cat-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+                name: item.categoryName.trim(),
+                slug: item.categoryName.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-')
+              };
+              currentCategories.push(match);
+              await upsertSupabaseCategory(match);
+            }
+            item.categoryId = match.id;
+          }
+        }
+      }
+      DBManager.updateCategories(currentCategories);
+
+      // 2. Prepare and save draft items
+      const existingMenuItems = DBManager.getMenuItems();
+      const savedDrafts: MenuItem[] = [];
+
+      if (Array.isArray(rawItems)) {
+        for (const item of rawItems) {
+          const isCustom = item.isCustomDish !== undefined ? item.isCustomDish : isCustomOrUniqueDish(item.name || '', item.description || '');
+          const imageList = Array.isArray(item.images) ? item.images : (item.image ? [item.image] : []);
+
+          // Generate or preserve verified images
+          const verifiedImagesList = Array.isArray(item.verifiedImages) && item.verifiedImages.length > 0
+            ? item.verifiedImages
+            : imageList.map((url: string) => verifyImageAuthenticity(item.name || '', item.description || '', '', url));
+
+          const primaryImage = (verifiedImagesList.find((v: any) => v.isVerified)?.url) || (imageList[0] || '');
+
+          const draftItem: MenuItem = {
+            id: item.id || `item-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+            name: (item.name || 'Untitled Dish').trim(),
+            description: (item.description || '').trim(),
+            price: parseFloat(item.price) || 0,
+            categoryId: item.categoryId || currentCategories[0]?.id || 'cat-starters',
+            image: primaryImage,
+            images: imageList,
+            verifiedImages: verifiedImagesList,
+            isCustomDish: isCustom,
+            photoMessage: item.photoMessage || (isCustom ? 'Real photos required from restaurant. Admin must upload actual photos.' : undefined),
+            isVeg: item.isVeg !== undefined ? !!item.isVeg : true,
+            isNonVeg: item.isNonVeg !== undefined ? !!item.isNonVeg : false,
+            spiceLevel: item.spiceLevel !== undefined ? parseInt(item.spiceLevel) : 0,
+            isDraft: true
+          };
+
+          const existingIdx = existingMenuItems.findIndex(m => m.id === draftItem.id);
+          if (existingIdx !== -1) {
+            existingMenuItems[existingIdx] = draftItem;
+          } else {
+            existingMenuItems.push(draftItem);
+          }
+
+          savedDrafts.push(draftItem);
+          await upsertSupabaseMenuItem(draftItem);
+        }
+      }
+
+      DBManager.updateMenuItems(existingMenuItems);
+
+      res.json({
+        success: true,
+        count: savedDrafts.length,
+        message: 'Drafts saved successfully',
+        items: savedDrafts
+      });
+    } catch (error: any) {
+      console.error('[Save Draft API Error]:', error);
+      res.status(500).json({ error: error.message || 'Failed to save drafts' });
+    }
+  });
+
+  // POST /api/admin/publish-menu - Publish menu items & categories to live site
+  app.post('/api/admin/publish-menu', requireAdmin, async (req, res) => {
+    try {
+      const { items, menuItems, categories: newCategories, websiteContent } = req.body || {};
+
+      let currentCategories = DBManager.getCategories();
+      
+      // Save categories if provided
+      if (Array.isArray(newCategories)) {
+        for (const cat of newCategories) {
+          const catIndex = currentCategories.findIndex(c => c.id === cat.id);
+          if (catIndex !== -1) {
+            currentCategories[catIndex] = cat;
+          } else {
+            currentCategories.push(cat);
+          }
+          await upsertSupabaseCategory(cat);
+        }
+        DBManager.updateCategories(currentCategories);
+      }
+
+      // Save website content if provided
+      if (websiteContent) {
+        DBManager.updateWebsiteContent(websiteContent);
+        await upsertSupabaseWebsiteContent(websiteContent);
+      }
+
+      let currentMenuItems = DBManager.getMenuItems();
+      const rawItems = items || menuItems;
+
+      // If items are passed in body, upsert them first as published items
+      if (Array.isArray(rawItems) && rawItems.length > 0) {
+        for (const item of rawItems) {
+          if (!item.categoryId && item.categoryName) {
+            let match = currentCategories.find(c => c.name.toLowerCase() === item.categoryName.toLowerCase());
+            if (!match) {
+              match = {
+                id: `cat-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+                name: item.categoryName.trim(),
+                slug: item.categoryName.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-')
+              };
+              currentCategories.push(match);
+              await upsertSupabaseCategory(match);
+            }
+            item.categoryId = match.id;
+          }
+
+          const isCustom = item.isCustomDish !== undefined ? item.isCustomDish : isCustomOrUniqueDish(item.name || '', item.description || '');
+          const imageList = Array.isArray(item.images) ? item.images : (item.image ? [item.image] : []);
+
+          const verifiedImagesList = Array.isArray(item.verifiedImages) && item.verifiedImages.length > 0
+            ? item.verifiedImages
+            : imageList.map((url: string) => verifyImageAuthenticity(item.name || '', item.description || '', '', url));
+
+          const primaryImage = (verifiedImagesList.find((v: any) => v.isVerified)?.url) || (imageList[0] || '');
+
+          const publishedItem: MenuItem = {
+            id: item.id || `item-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+            name: (item.name || 'Untitled Dish').trim(),
+            description: (item.description || '').trim(),
+            price: parseFloat(item.price) || 0,
+            categoryId: item.categoryId || currentCategories[0]?.id || 'cat-starters',
+            image: primaryImage,
+            images: imageList,
+            verifiedImages: verifiedImagesList,
+            isCustomDish: isCustom,
+            photoMessage: item.photoMessage || (isCustom ? 'Real photos required from restaurant. Admin must upload actual photos.' : undefined),
+            isVeg: item.isVeg !== undefined ? !!item.isVeg : true,
+            isNonVeg: item.isNonVeg !== undefined ? !!item.isNonVeg : false,
+            spiceLevel: item.spiceLevel !== undefined ? parseInt(item.spiceLevel) : 0,
+            isDraft: false
+          };
+
+          const existingIdx = currentMenuItems.findIndex(m => m.id === publishedItem.id);
+          if (existingIdx !== -1) {
+            currentMenuItems[existingIdx] = publishedItem;
+          } else {
+            currentMenuItems.push(publishedItem);
+          }
+        }
+        DBManager.updateCategories(currentCategories);
+      }
+
+      // Mark ALL current menu items as published (isDraft = false)
+      const allPublishedItems: MenuItem[] = currentMenuItems.map(item => ({
+        ...item,
+        isDraft: false
+      }));
+
+      DBManager.updateMenuItems(allPublishedItems);
+
+      // Sync all published items to Supabase
+      for (const item of allPublishedItems) {
+        await upsertSupabaseMenuItem(item);
+      }
+
+      lastPublishedAt = new Date().toISOString();
+
+      res.json({
+        success: true,
+        message: '✅ Menu Published Successfully',
+        lastPublishedAt,
+        publishedCount: allPublishedItems.length,
+        categoriesCount: DBManager.getCategories().length
+      });
+    } catch (error: any) {
+      console.error('[Publish API Error]:', error);
+      res.status(500).json({ error: error.message || '❌ Publish Failed. Try Again' });
+    }
+  });
+
+  // POST /api/publish - Backwards compatible alias for publish-menu
+  app.post('/api/publish', requireAdmin, async (req, res) => {
+    try {
+      const { categories, menuItems, websiteContent } = req.body || {};
+      
+      if (Array.isArray(categories)) {
+        DBManager.updateCategories(categories);
+        for (const cat of categories) {
+          await upsertSupabaseCategory(cat);
+        }
+      }
+
+      if (websiteContent) {
+        DBManager.updateWebsiteContent(websiteContent);
+        await upsertSupabaseWebsiteContent(websiteContent);
+      }
+
+      let itemsToPublish = Array.isArray(menuItems) ? menuItems : DBManager.getMenuItems();
+      
+      const publishedItems: MenuItem[] = itemsToPublish.map(item => ({
+        ...item,
+        isDraft: false
+      }));
+
+      DBManager.updateMenuItems(publishedItems);
+
+      for (const item of publishedItems) {
+        await upsertSupabaseMenuItem(item);
+      }
+
+      lastPublishedAt = new Date().toISOString();
+
+      res.json({
+        success: true,
+        message: '✅ Menu Published Successfully',
+        lastPublishedAt,
+        publishedCount: publishedItems.length,
+        categoriesCount: DBManager.getCategories().length
+      });
+    } catch (error: any) {
+      console.error('[Publish API Error]:', error);
+      res.status(500).json({ error: error.message || '❌ Publish Failed. Try Again' });
+    }
+  });
+
+  // GET /api/published-menu - Public Endpoint returning ONLY published data
+  app.get('/api/published-menu', async (req, res) => {
+    try {
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+
+      let categories = await getSupabaseCategories();
+      if (!categories) {
+        categories = DBManager.getCategories();
+      }
+
+      let menuItems = await getSupabaseMenuItems();
+      if (!menuItems) {
+        menuItems = DBManager.getMenuItems();
+      }
+
+      let content = await getSupabaseWebsiteContent();
+      if (!content) {
+        content = DBManager.getWebsiteContent();
+      }
+
+      // Filter out draft items - Public website ONLY receives published data
+      const publishedMenuItems = (menuItems || []).filter(item => !item.isDraft);
+
+      res.json({
+        categories: categories || [],
+        menuItems: publishedMenuItems,
+        websiteContent: content || DBManager.getWebsiteContent(),
+        lastPublishedAt
+      });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
@@ -282,6 +748,45 @@ async function startServer() {
       res.json({ success: true, items: extractedItems });
     } catch (error: any) {
       console.error("Failed to parse PDF:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Search verified real food photos endpoint (Image Authenticity Policy)
+  app.post('/api/admin/generate-images', requireAdmin, async (req, res) => {
+    try {
+      const { name, description, categoryName } = req.body;
+      if (!name) {
+        return res.status(400).json({ error: 'Item name is required for image search.' });
+      }
+
+      console.log(`Searching verified real food photos for: ${name}...`);
+      const searchResult = searchVerifiedRealFoodPhotos(name, description || '', categoryName || '');
+      res.json({ 
+        success: true, 
+        verified: searchResult.verified,
+        isCustomDish: searchResult.isCustomDish,
+        images: searchResult.images,
+        message: searchResult.message 
+      });
+    } catch (error: any) {
+      console.error("Failed to search verified images:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // AI Spice Level Detector endpoint
+  app.post('/api/admin/detect-spice', requireAdmin, async (req, res) => {
+    try {
+      const { name, description, categoryName } = req.body;
+      if (!name) {
+        return res.status(400).json({ error: 'Item name is required for spice detection.' });
+      }
+
+      const detectedLevel = detectSpiceLevel(name, description || '', categoryName || '');
+      res.json({ success: true, spiceLevel: detectedLevel });
+    } catch (error: any) {
+      console.error("Failed to detect spice level:", error);
       res.status(500).json({ error: error.message });
     }
   });
