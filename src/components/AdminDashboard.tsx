@@ -2310,7 +2310,7 @@ export default function AdminDashboard({
                                     <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-red-400 bg-red-950/40 border border-red-500/30 px-2 py-0.5 rounded-lg">
                                       ❌ Verification Failed
                                     </span>
-                                    <p className="text-[10px] text-white/50">Score below required thresholds</p>
+                                    <p className="text-[10px] text-amber-300/90 font-semibold">{item.photoMessage || 'Please upload a real restaurant photo.'}</p>
                                     <label className="inline-flex items-center gap-1 text-[10px] font-bold text-[#D4AF37] hover:underline cursor-pointer">
                                       <Upload className="w-3 h-3" /> Upload Real Photo
                                       <input

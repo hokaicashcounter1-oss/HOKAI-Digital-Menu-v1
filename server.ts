@@ -488,14 +488,21 @@ async function startServer() {
       if (Array.isArray(rawItems)) {
         for (const item of rawItems) {
           const isCustom = item.isCustomDish !== undefined ? item.isCustomDish : isCustomOrUniqueDish(item.name || '', item.description || '');
-          const imageList = Array.isArray(item.images) ? item.images : (item.image ? [item.image] : []);
+          const primaryImage = item.image || (Array.isArray(item.images) && item.images[0]) || '';
+          const imageList = Array.isArray(item.images) && item.images.length > 0 ? item.images : (primaryImage ? [primaryImage] : []);
 
-          // Generate or preserve verified images
+          // Generate or preserve verified images (Method 1 AI PDF import provides verifiedImages; Method 2 manual edits accept image directly)
           const verifiedImagesList = Array.isArray(item.verifiedImages) && item.verifiedImages.length > 0
             ? item.verifiedImages
-            : imageList.map((url: string) => verifyImageAuthenticity(item.name || '', item.description || '', '', url));
-
-          const primaryImage = (verifiedImagesList.find((v: any) => v.isVerified)?.url) || (imageList[0] || '');
+            : (primaryImage ? [{
+                url: primaryImage,
+                foodMatchScore: 100,
+                realPhotoScore: 100,
+                descriptionMatchScore: 100,
+                isVerified: true,
+                verificationNote: 'Admin uploaded or accepted photo.',
+                isCustomDish: false
+              }] : []);
 
           const draftItem: MenuItem = {
             id: item.id || `item-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
@@ -588,13 +595,21 @@ async function startServer() {
           }
 
           const isCustom = item.isCustomDish !== undefined ? item.isCustomDish : isCustomOrUniqueDish(item.name || '', item.description || '');
-          const imageList = Array.isArray(item.images) ? item.images : (item.image ? [item.image] : []);
+          const primaryImage = item.image || (Array.isArray(item.images) && item.images[0]) || '';
+          const imageList = Array.isArray(item.images) && item.images.length > 0 ? item.images : (primaryImage ? [primaryImage] : []);
 
+          // Generate or preserve verified images (Method 1 AI PDF import provides verifiedImages; Method 2 manual edits accept image directly)
           const verifiedImagesList = Array.isArray(item.verifiedImages) && item.verifiedImages.length > 0
             ? item.verifiedImages
-            : imageList.map((url: string) => verifyImageAuthenticity(item.name || '', item.description || '', '', url));
-
-          const primaryImage = (verifiedImagesList.find((v: any) => v.isVerified)?.url) || (imageList[0] || '');
+            : (primaryImage ? [{
+                url: primaryImage,
+                foodMatchScore: 100,
+                realPhotoScore: 100,
+                descriptionMatchScore: 100,
+                isVerified: true,
+                verificationNote: 'Admin uploaded or accepted photo.',
+                isCustomDish: false
+              }] : []);
 
           const publishedItem: MenuItem = {
             id: item.id || `item-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,

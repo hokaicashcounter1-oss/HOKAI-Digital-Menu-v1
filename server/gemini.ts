@@ -312,7 +312,7 @@ export function searchVerifiedRealFoodPhotos(
       isCustomDish: true,
       images: [],
       verifiedImages: [],
-      message: 'Real photos required from restaurant. Admin must upload actual photos.'
+      message: 'Please upload a real restaurant photo.'
     };
   }
 
@@ -347,7 +347,7 @@ export function searchVerifiedRealFoodPhotos(
     isCustomDish: false,
     images: [],
     verifiedImages: [],
-    message: `No verified food image found for "${name}". Please upload real photos.`
+    message: 'Please upload a real restaurant photo.'
   };
 }
 
