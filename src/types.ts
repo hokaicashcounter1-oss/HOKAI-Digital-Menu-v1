@@ -107,10 +107,19 @@ export interface ContactInfo {
   phone: string;
   whatsapp: string;
   email: string;
+  website?: string;
   address: string;
   googleMaps: string;
+  openingTime?: string;
+  closingTime?: string;
+  weeklyHoliday?: string;
   facebook: string;
   instagram: string;
+  youtube?: string;
+  twitter?: string;
+  qrCodeImage?: string;
+  logo?: string;
+  contactBanner?: string;
 }
 
 export interface WebsiteContent {

@@ -414,9 +414,14 @@ async function startServer() {
       const newContent = { heroBanner, aboutSection, contactInfo, gallery, restaurantName, restaurantSubtitle };
       DBManager.updateWebsiteContent(newContent);
       await upsertSupabaseWebsiteContent(newContent);
-      res.json({ success: true, content: DBManager.getWebsiteContent() });
+      res.json({
+        success: true,
+        message: '✅ Contact Information Published Successfully',
+        content: DBManager.getWebsiteContent()
+      });
     } catch (error: any) {
-      res.status(500).json({ error: error.message });
+      console.error('[Save Contact Error]:', error);
+      res.status(500).json({ error: '❌ Unable to Save Contact Information' });
     }
   });
 

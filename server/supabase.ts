@@ -106,17 +106,29 @@ export async function getSupabaseWebsiteContent(): Promise<WebsiteContent | null
     }
 
     if (data) {
+      const c = data.contact_info || data.contactInfo || {};
       return {
+        restaurantName: data.restaurantName || data.restaurant_name || 'HOKAI',
+        restaurantSubtitle: data.restaurantSubtitle || data.restaurant_subtitle || 'Pan-Asian Kitchen',
         heroBanner: data.heroBanner || data.hero_banner || '',
         aboutSection: data.aboutSection || data.about_section || '',
         contactInfo: {
-          phone: data.phone || (data.contact_info?.phone) || '',
-          whatsapp: data.whatsapp || (data.contact_info?.whatsapp) || '',
-          email: data.email || (data.contact_info?.email) || '',
-          address: data.address || (data.contact_info?.address) || '',
-          googleMaps: data.googleMaps || data.google_maps || (data.contact_info?.googleMaps || data.contact_info?.google_maps) || '',
-          facebook: data.facebook || (data.contact_info?.facebook) || '',
-          instagram: data.instagram || (data.contact_info?.instagram) || ''
+          phone: data.phone || c.phone || '',
+          whatsapp: data.whatsapp || c.whatsapp || '',
+          email: data.email || c.email || '',
+          website: data.website || c.website || '',
+          address: data.address || c.address || '',
+          googleMaps: data.googleMaps || data.google_maps || c.googleMaps || c.google_maps || '',
+          openingTime: data.openingTime || data.opening_time || c.openingTime || c.opening_time || '',
+          closingTime: data.closingTime || data.closing_time || c.closingTime || c.closing_time || '',
+          weeklyHoliday: data.weeklyHoliday || data.weekly_holiday || c.weeklyHoliday || c.weekly_holiday || '',
+          facebook: data.facebook || c.facebook || '',
+          instagram: data.instagram || c.instagram || '',
+          youtube: data.youtube || c.youtube || '',
+          twitter: data.twitter || c.twitter || '',
+          qrCodeImage: data.qrCodeImage || data.qr_code_image || c.qrCodeImage || c.qr_code_image || '',
+          logo: data.logo || c.logo || '',
+          contactBanner: data.contactBanner || data.contact_banner || c.contactBanner || c.contact_banner || ''
         },
         gallery: Array.isArray(data.gallery) ? data.gallery : []
       };
@@ -303,16 +315,28 @@ export async function upsertSupabaseWebsiteContent(content: WebsiteContent): Pro
 
     const camelPayload = {
       id,
+      restaurantName: content.restaurantName,
+      restaurantSubtitle: content.restaurantSubtitle,
       heroBanner: content.heroBanner,
       aboutSection: content.aboutSection,
-      phone: content.contactInfo.phone,
-      whatsapp: content.contactInfo.whatsapp,
-      email: content.contactInfo.email,
-      address: content.contactInfo.address,
-      googleMaps: content.contactInfo.googleMaps,
-      facebook: content.contactInfo.facebook,
-      instagram: content.contactInfo.instagram,
-      gallery: content.gallery
+      phone: content.contactInfo?.phone,
+      whatsapp: content.contactInfo?.whatsapp,
+      email: content.contactInfo?.email,
+      website: content.contactInfo?.website,
+      address: content.contactInfo?.address,
+      googleMaps: content.contactInfo?.googleMaps,
+      openingTime: content.contactInfo?.openingTime,
+      closingTime: content.contactInfo?.closingTime,
+      weeklyHoliday: content.contactInfo?.weeklyHoliday,
+      facebook: content.contactInfo?.facebook,
+      instagram: content.contactInfo?.instagram,
+      youtube: content.contactInfo?.youtube,
+      twitter: content.contactInfo?.twitter,
+      qrCodeImage: content.contactInfo?.qrCodeImage,
+      logo: content.contactInfo?.logo,
+      contactBanner: content.contactInfo?.contactBanner,
+      gallery: content.gallery,
+      contact_info: content.contactInfo
     };
 
     const { error: camelErr } = await client.from('website_content').upsert(camelPayload);
@@ -322,16 +346,28 @@ export async function upsertSupabaseWebsiteContent(content: WebsiteContent): Pro
 
     const snakePayload = {
       id,
+      restaurant_name: content.restaurantName,
+      restaurant_subtitle: content.restaurantSubtitle,
       hero_banner: content.heroBanner,
       about_section: content.aboutSection,
-      phone: content.contactInfo.phone,
-      whatsapp: content.contactInfo.whatsapp,
-      email: content.contactInfo.email,
-      address: content.contactInfo.address,
-      google_maps: content.contactInfo.googleMaps,
-      facebook: content.contactInfo.facebook,
-      instagram: content.contactInfo.instagram,
-      gallery: content.gallery
+      phone: content.contactInfo?.phone,
+      whatsapp: content.contactInfo?.whatsapp,
+      email: content.contactInfo?.email,
+      website: content.contactInfo?.website,
+      address: content.contactInfo?.address,
+      google_maps: content.contactInfo?.googleMaps,
+      opening_time: content.contactInfo?.openingTime,
+      closing_time: content.contactInfo?.closingTime,
+      weekly_holiday: content.contactInfo?.weeklyHoliday,
+      facebook: content.contactInfo?.facebook,
+      instagram: content.contactInfo?.instagram,
+      youtube: content.contactInfo?.youtube,
+      twitter: content.contactInfo?.twitter,
+      qr_code_image: content.contactInfo?.qrCodeImage,
+      logo: content.contactInfo?.logo,
+      contact_banner: content.contactInfo?.contactBanner,
+      gallery: content.gallery,
+      contact_info: content.contactInfo
     };
 
     const { error: snakeErr } = await client.from('website_content').upsert(snakePayload);

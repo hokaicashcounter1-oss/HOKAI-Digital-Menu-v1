@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   BarChart3, LayoutGrid, FileText, Settings2, Trash2, Edit3, 
@@ -54,11 +54,58 @@ export default function AdminDashboard({
   const [contentForm, setContentForm] = useState<WebsiteContent>({
     restaurantName: websiteContent.restaurantName || 'HOKAI',
     restaurantSubtitle: websiteContent.restaurantSubtitle || 'Pan-Asian Kitchen',
-    heroBanner: websiteContent.heroBanner,
-    aboutSection: websiteContent.aboutSection,
-    contactInfo: websiteContent.contactInfo,
-    gallery: websiteContent.gallery
+    heroBanner: websiteContent.heroBanner || '',
+    aboutSection: websiteContent.aboutSection || '',
+    contactInfo: {
+      phone: websiteContent.contactInfo?.phone || '',
+      whatsapp: websiteContent.contactInfo?.whatsapp || '',
+      email: websiteContent.contactInfo?.email || '',
+      website: websiteContent.contactInfo?.website || '',
+      address: websiteContent.contactInfo?.address || '',
+      googleMaps: websiteContent.contactInfo?.googleMaps || '',
+      openingTime: websiteContent.contactInfo?.openingTime || '',
+      closingTime: websiteContent.contactInfo?.closingTime || '',
+      weeklyHoliday: websiteContent.contactInfo?.weeklyHoliday || '',
+      facebook: websiteContent.contactInfo?.facebook || '',
+      instagram: websiteContent.contactInfo?.instagram || '',
+      youtube: websiteContent.contactInfo?.youtube || '',
+      twitter: websiteContent.contactInfo?.twitter || '',
+      qrCodeImage: websiteContent.contactInfo?.qrCodeImage || '',
+      logo: websiteContent.contactInfo?.logo || '',
+      contactBanner: websiteContent.contactInfo?.contactBanner || ''
+    },
+    gallery: websiteContent.gallery || []
   });
+
+  useEffect(() => {
+    if (websiteContent) {
+      setContentForm({
+        restaurantName: websiteContent.restaurantName || 'HOKAI',
+        restaurantSubtitle: websiteContent.restaurantSubtitle || 'Pan-Asian Kitchen',
+        heroBanner: websiteContent.heroBanner || '',
+        aboutSection: websiteContent.aboutSection || '',
+        contactInfo: {
+          phone: websiteContent.contactInfo?.phone || '',
+          whatsapp: websiteContent.contactInfo?.whatsapp || '',
+          email: websiteContent.contactInfo?.email || '',
+          website: websiteContent.contactInfo?.website || '',
+          address: websiteContent.contactInfo?.address || '',
+          googleMaps: websiteContent.contactInfo?.googleMaps || '',
+          openingTime: websiteContent.contactInfo?.openingTime || '',
+          closingTime: websiteContent.contactInfo?.closingTime || '',
+          weeklyHoliday: websiteContent.contactInfo?.weeklyHoliday || '',
+          facebook: websiteContent.contactInfo?.facebook || '',
+          instagram: websiteContent.contactInfo?.instagram || '',
+          youtube: websiteContent.contactInfo?.youtube || '',
+          twitter: websiteContent.contactInfo?.twitter || '',
+          qrCodeImage: websiteContent.contactInfo?.qrCodeImage || '',
+          logo: websiteContent.contactInfo?.logo || '',
+          contactBanner: websiteContent.contactInfo?.contactBanner || ''
+        },
+        gallery: websiteContent.gallery || []
+      });
+    }
+  }, [websiteContent]);
 
   // AI & Upload states
   const [isGeneratingImages, setIsGeneratingImages] = useState<boolean>(false);
@@ -778,8 +825,9 @@ export default function AdminDashboard({
   };
 
   // Website Content Form
-  const handleSaveContent = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSaveContent = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    setIsPublishing(true);
     try {
       const response = await fetch('/api/website-content', {
         method: 'PUT',
@@ -787,16 +835,78 @@ export default function AdminDashboard({
         body: JSON.stringify(contentForm)
       });
 
+      const data = await response.json();
       if (!response.ok) {
-        const err = await response.json();
-        throw new Error(err.error || 'Failed to update website content.');
+        throw new Error(data.error || '❌ Unable to Save Contact Information');
       }
 
-      onRefreshData();
+      await onRefreshData();
       setLastUpdated(new Date().toLocaleTimeString());
-      showToast('Website brand settings updated successfully!', 'success');
+      showToast(data.message || '✅ Contact Information Published Successfully', 'success');
     } catch (err: any) {
-      showToast(err.message, 'error');
+      showToast(err.message || '❌ Unable to Save Contact Information', 'error');
+    } finally {
+      setIsPublishing(false);
+    }
+  };
+
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      try {
+        const base64 = await fileToBase64(e.target.files[0]);
+        setContentForm(p => ({
+          ...p,
+          contactInfo: { ...p.contactInfo, logo: base64 }
+        }));
+        showToast('Logo uploaded successfully!', 'success');
+      } catch (err) {
+        showToast('Failed to upload logo image.', 'error');
+      }
+    }
+  };
+
+  const handleQRCodeUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      try {
+        const base64 = await fileToBase64(e.target.files[0]);
+        setContentForm(p => ({
+          ...p,
+          contactInfo: { ...p.contactInfo, qrCodeImage: base64 }
+        }));
+        showToast('QR Code image uploaded successfully!', 'success');
+      } catch (err) {
+        showToast('Failed to upload QR Code image.', 'error');
+      }
+    }
+  };
+
+  const handleContactBannerUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      try {
+        const base64 = await fileToBase64(e.target.files[0]);
+        setContentForm(p => ({
+          ...p,
+          contactInfo: { ...p.contactInfo, contactBanner: base64 }
+        }));
+        showToast('Contact banner uploaded successfully!', 'success');
+      } catch (err) {
+        showToast('Failed to upload contact banner.', 'error');
+      }
+    }
+  };
+
+  const handleHeroBannerUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      try {
+        const base64 = await fileToBase64(e.target.files[0]);
+        setContentForm(p => ({
+          ...p,
+          heroBanner: base64
+        }));
+        showToast('Hero cover banner uploaded successfully!', 'success');
+      } catch (err) {
+        showToast('Failed to upload hero cover banner.', 'error');
+      }
     }
   };
 
@@ -2403,161 +2513,392 @@ export default function AdminDashboard({
 
             {/* TAB 5: HOMEPAGE & CONTENT SETTINGS */}
             {activeTab === 'content' && (
-              <form onSubmit={handleSaveContent} className="space-y-6">
-                <h2 className="text-xl font-bold uppercase tracking-wider text-white font-display border-b border-white/5 pb-2">
-                  Branding & Narrative Settings
-                </h2>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-white/5 p-4 rounded-2xl border border-white/5">
-                  {/* Restaurant Name */}
-                  <div>
-                    <label className="block text-white/50 text-[10px] uppercase font-semibold tracking-wider mb-2">Restaurant Name</label>
-                    <input
-                      type="text"
-                      required
-                      value={contentForm.restaurantName || ''}
-                      onChange={(e) => setContentForm(p => ({ ...p, restaurantName: e.target.value }))}
-                      placeholder="HOKAI"
-                      className="w-full bg-[#0B0B0B] border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:border-[#D4AF37]"
-                    />
-                  </div>
-
-                  {/* Restaurant Subtitle */}
-                  <div>
-                    <label className="block text-white/50 text-[10px] uppercase font-semibold tracking-wider mb-2">Restaurant Subtitle</label>
-                    <input
-                      type="text"
-                      required
-                      value={contentForm.restaurantSubtitle || ''}
-                      onChange={(e) => setContentForm(p => ({ ...p, restaurantSubtitle: e.target.value }))}
-                      placeholder="Pan-Asian Kitchen"
-                      className="w-full bg-[#0B0B0B] border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:border-[#D4AF37]"
-                    />
+              <form onSubmit={handleSaveContent} className="space-y-8">
+                <div className="flex items-center justify-between border-b border-white/10 pb-3">
+                  <h2 className="text-xl font-bold uppercase tracking-wider text-white font-display">
+                    Branding & Contact Management
+                  </h2>
+                  <div className="flex gap-2">
+                    <button
+                      type="submit"
+                      disabled={isPublishing}
+                      className="px-4 py-2 bg-white/10 hover:bg-white/20 border border-white/10 text-white font-bold text-xs uppercase tracking-widest rounded-xl transition-all flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Save className="w-4 h-4 text-[#D4AF37]" />
+                      Save
+                    </button>
+                    <button
+                      type="button"
+                      onClick={async (e) => {
+                        await handleSaveContent(e);
+                        await handlePublishToSite();
+                      }}
+                      disabled={isPublishing}
+                      className="px-4 py-2 bg-[#D4AF37] hover:bg-amber-400 text-black font-bold text-xs uppercase tracking-widest rounded-xl shadow-lg transition-all flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
+                    >
+                      {isPublishing ? <Loader2 className="w-4 h-4 animate-spin text-black" /> : <Check className="w-4 h-4 text-black" />}
+                      Publish Now To Site
+                    </button>
                   </div>
                 </div>
 
-                {/* Hero Banner Image */}
-                <div>
-                  <label className="block text-white/50 text-[10px] uppercase font-semibold tracking-wider mb-2">Homepage Hero Cover URL</label>
-                  <input
-                    type="text"
-                    value={contentForm.heroBanner}
-                    onChange={(e) => setContentForm(p => ({ ...p, heroBanner: e.target.value }))}
-                    className="w-full bg-[#0B0B0B] border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:border-[#D4AF37]"
-                  />
+                {/* 1. Brand & Identity */}
+                <div className="bg-white/5 p-6 rounded-2xl border border-white/10 space-y-4">
+                  <h3 className="text-sm font-bold uppercase tracking-wider text-[#D4AF37] font-sans flex items-center gap-2">
+                    Restaurant Identity & Assets
+                  </h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {/* Restaurant Name */}
+                    <div>
+                      <label className="block text-white/60 text-[11px] uppercase font-semibold tracking-wider mb-1.5">Restaurant Name</label>
+                      <input
+                        type="text"
+                        required
+                        value={contentForm.restaurantName || ''}
+                        onChange={(e) => setContentForm(p => ({ ...p, restaurantName: e.target.value }))}
+                        placeholder="HOKAI"
+                        className="w-full bg-[#0B0B0B] border border-white/10 rounded-xl px-3.5 py-2.5 text-white text-sm focus:outline-none focus:border-[#D4AF37]"
+                      />
+                    </div>
+
+                    {/* Restaurant Subtitle */}
+                    <div>
+                      <label className="block text-white/60 text-[11px] uppercase font-semibold tracking-wider mb-1.5">Restaurant Subtitle</label>
+                      <input
+                        type="text"
+                        required
+                        value={contentForm.restaurantSubtitle || ''}
+                        onChange={(e) => setContentForm(p => ({ ...p, restaurantSubtitle: e.target.value }))}
+                        placeholder="Pan-Asian Kitchen"
+                        className="w-full bg-[#0B0B0B] border border-white/10 rounded-xl px-3.5 py-2.5 text-white text-sm focus:outline-none focus:border-[#D4AF37]"
+                      />
+                    </div>
+
+                    {/* Restaurant Logo */}
+                    <div>
+                      <label className="block text-white/60 text-[11px] uppercase font-semibold tracking-wider mb-1.5">Restaurant Logo Image</label>
+                      <input
+                        type="text"
+                        value={contentForm.contactInfo.logo || ''}
+                        onChange={(e) => setContentForm(p => ({
+                          ...p,
+                          contactInfo: { ...p.contactInfo, logo: e.target.value }
+                        }))}
+                        placeholder="Logo Image URL (https://...)"
+                        className="w-full bg-[#0B0B0B] border border-white/10 rounded-xl px-3.5 py-2.5 text-white text-sm focus:outline-none focus:border-[#D4AF37] mb-2"
+                      />
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleLogoUpload}
+                        className="w-full text-xs text-white/60 file:mr-2 file:py-1 file:px-2 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-[#D4AF37] file:text-black hover:file:bg-amber-400 cursor-pointer"
+                      />
+                    </div>
+
+                    {/* QR Code Image */}
+                    <div>
+                      <label className="block text-white/60 text-[11px] uppercase font-semibold tracking-wider mb-1.5">QR Code Image</label>
+                      <input
+                        type="text"
+                        value={contentForm.contactInfo.qrCodeImage || ''}
+                        onChange={(e) => setContentForm(p => ({
+                          ...p,
+                          contactInfo: { ...p.contactInfo, qrCodeImage: e.target.value }
+                        }))}
+                        placeholder="QR Code Image URL (https://...)"
+                        className="w-full bg-[#0B0B0B] border border-white/10 rounded-xl px-3.5 py-2.5 text-white text-sm focus:outline-none focus:border-[#D4AF37] mb-2"
+                      />
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleQRCodeUpload}
+                        className="w-full text-xs text-white/60 file:mr-2 file:py-1 file:px-2 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-[#D4AF37] file:text-black hover:file:bg-amber-400 cursor-pointer"
+                      />
+                    </div>
+
+                    {/* Contact Banner Image */}
+                    <div>
+                      <label className="block text-white/60 text-[11px] uppercase font-semibold tracking-wider mb-1.5">Contact Section Banner Image</label>
+                      <input
+                        type="text"
+                        value={contentForm.contactInfo.contactBanner || ''}
+                        onChange={(e) => setContentForm(p => ({
+                          ...p,
+                          contactInfo: { ...p.contactInfo, contactBanner: e.target.value }
+                        }))}
+                        placeholder="Banner Image URL (https://...)"
+                        className="w-full bg-[#0B0B0B] border border-white/10 rounded-xl px-3.5 py-2.5 text-white text-sm focus:outline-none focus:border-[#D4AF37] mb-2"
+                      />
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleContactBannerUpload}
+                        className="w-full text-xs text-white/60 file:mr-2 file:py-1 file:px-2 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-[#D4AF37] file:text-black hover:file:bg-amber-400 cursor-pointer"
+                      />
+                    </div>
+
+                    {/* Hero Banner Cover */}
+                    <div>
+                      <label className="block text-white/60 text-[11px] uppercase font-semibold tracking-wider mb-1.5">Homepage Hero Cover Image</label>
+                      <input
+                        type="text"
+                        value={contentForm.heroBanner || ''}
+                        onChange={(e) => setContentForm(p => ({ ...p, heroBanner: e.target.value }))}
+                        placeholder="Hero Cover Image URL (https://...)"
+                        className="w-full bg-[#0B0B0B] border border-white/10 rounded-xl px-3.5 py-2.5 text-white text-sm focus:outline-none focus:border-[#D4AF37] mb-2"
+                      />
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleHeroBannerUpload}
+                        className="w-full text-xs text-white/60 file:mr-2 file:py-1 file:px-2 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-[#D4AF37] file:text-black hover:file:bg-amber-400 cursor-pointer"
+                      />
+                    </div>
+                  </div>
                 </div>
 
-                {/* About Paragraph Text */}
-                <div>
-                  <label className="block text-white/50 text-[10px] uppercase font-semibold tracking-wider mb-2">About Section Bio Narrative</label>
+                {/* 2. Restaurant Description */}
+                <div className="bg-white/5 p-6 rounded-2xl border border-white/10 space-y-2">
+                  <h3 className="text-sm font-bold uppercase tracking-wider text-[#D4AF37] font-sans">
+                    Restaurant Description & Bio Narrative
+                  </h3>
                   <textarea
-                    value={contentForm.aboutSection}
+                    value={contentForm.aboutSection || ''}
                     onChange={(e) => setContentForm(p => ({ ...p, aboutSection: e.target.value }))}
                     rows={4}
+                    placeholder="Enter detailed description of the restaurant, culinary story, ambiance..."
                     className="w-full bg-[#0B0B0B] border border-white/10 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-[#D4AF37] leading-relaxed"
                   />
                 </div>
 
-                {/* Contact Coordinates */}
-                <div className="border-t border-white/5 pt-6">
-                  <h3 className="text-white text-base font-bold font-display uppercase tracking-wider mb-4 text-[#D4AF37]">
-                    Contact Coordinates & Social Channels
+                {/* 3. Direct Contact Coordinates */}
+                <div className="bg-white/5 p-6 rounded-2xl border border-white/10 space-y-4">
+                  <h3 className="text-sm font-bold uppercase tracking-wider text-[#D4AF37] font-sans">
+                    Contact Channels & Location
                   </h3>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    {/* Phone */}
+                    {/* Phone Number */}
                     <div>
-                      <label className="block text-white/50 text-[10px] uppercase font-semibold tracking-wider mb-1">Phone Number</label>
+                      <label className="block text-white/60 text-[11px] uppercase font-semibold tracking-wider mb-1.5">Phone Helpline</label>
                       <input
                         type="text"
-                        value={contentForm.contactInfo.phone}
+                        value={contentForm.contactInfo.phone || ''}
                         onChange={(e) => setContentForm(p => ({
                           ...p,
                           contactInfo: { ...p.contactInfo, phone: e.target.value }
                         }))}
-                        className="w-full bg-[#0B0B0B] border border-white/10 rounded-xl px-3 py-2 text-white text-sm focus:outline-none"
+                        placeholder="+91 98765 43210"
+                        className="w-full bg-[#0B0B0B] border border-white/10 rounded-xl px-3.5 py-2.5 text-white text-sm focus:outline-none focus:border-[#D4AF37]"
                       />
                     </div>
 
-                    {/* WhatsApp */}
+                    {/* WhatsApp Number */}
                     <div>
-                      <label className="block text-white/50 text-[10px] uppercase font-semibold tracking-wider mb-1">WhatsApp ID (numbers only)</label>
+                      <label className="block text-white/60 text-[11px] uppercase font-semibold tracking-wider mb-1.5">WhatsApp Number</label>
                       <input
                         type="text"
-                        value={contentForm.contactInfo.whatsapp}
+                        value={contentForm.contactInfo.whatsapp || ''}
                         onChange={(e) => setContentForm(p => ({
                           ...p,
                           contactInfo: { ...p.contactInfo, whatsapp: e.target.value }
                         }))}
-                        className="w-full bg-[#0B0B0B] border border-white/10 rounded-xl px-3 py-2 text-white text-sm focus:outline-none"
+                        placeholder="+91 98765 43210"
+                        className="w-full bg-[#0B0B0B] border border-white/10 rounded-xl px-3.5 py-2.5 text-white text-sm focus:outline-none focus:border-[#D4AF37]"
                       />
                     </div>
 
                     {/* Email */}
                     <div>
-                      <label className="block text-white/50 text-[10px] uppercase font-semibold tracking-wider mb-1">Business Email</label>
+                      <label className="block text-white/60 text-[11px] uppercase font-semibold tracking-wider mb-1.5">Email Address</label>
                       <input
                         type="email"
-                        value={contentForm.contactInfo.email}
+                        value={contentForm.contactInfo.email || ''}
                         onChange={(e) => setContentForm(p => ({
                           ...p,
                           contactInfo: { ...p.contactInfo, email: e.target.value }
                         }))}
-                        className="w-full bg-[#0B0B0B] border border-white/10 rounded-xl px-3 py-2 text-white text-sm focus:outline-none"
+                        placeholder="reservations@hokaipanasian.com"
+                        className="w-full bg-[#0B0B0B] border border-white/10 rounded-xl px-3.5 py-2.5 text-white text-sm focus:outline-none focus:border-[#D4AF37]"
                       />
                     </div>
 
-                    {/* Address */}
+                    {/* Website */}
                     <div>
-                      <label className="block text-white/50 text-[10px] uppercase font-semibold tracking-wider mb-1">Physical Address</label>
+                      <label className="block text-white/60 text-[11px] uppercase font-semibold tracking-wider mb-1.5">Official Website URL</label>
                       <input
                         type="text"
-                        value={contentForm.contactInfo.address}
+                        value={contentForm.contactInfo.website || ''}
+                        onChange={(e) => setContentForm(p => ({
+                          ...p,
+                          contactInfo: { ...p.contactInfo, website: e.target.value }
+                        }))}
+                        placeholder="www.hokaipanasian.com"
+                        className="w-full bg-[#0B0B0B] border border-white/10 rounded-xl px-3.5 py-2.5 text-white text-sm focus:outline-none focus:border-[#D4AF37]"
+                      />
+                    </div>
+
+                    {/* Full Address */}
+                    <div className="sm:col-span-2">
+                      <label className="block text-white/60 text-[11px] uppercase font-semibold tracking-wider mb-1.5">Full Physical Address</label>
+                      <input
+                        type="text"
+                        value={contentForm.contactInfo.address || ''}
                         onChange={(e) => setContentForm(p => ({
                           ...p,
                           contactInfo: { ...p.contactInfo, address: e.target.value }
                         }))}
-                        className="w-full bg-[#0B0B0B] border border-white/10 rounded-xl px-3 py-2 text-white text-sm focus:outline-none"
+                        placeholder="Level 2, Golden Heights Tower, Fine Dining District..."
+                        className="w-full bg-[#0B0B0B] border border-white/10 rounded-xl px-3.5 py-2.5 text-white text-sm focus:outline-none focus:border-[#D4AF37]"
                       />
                     </div>
 
-                    {/* Facebook */}
-                    <div>
-                      <label className="block text-white/50 text-[10px] uppercase font-semibold tracking-wider mb-1">Facebook Handle</label>
+                    {/* Google Maps Link */}
+                    <div className="sm:col-span-2">
+                      <label className="block text-white/60 text-[11px] uppercase font-semibold tracking-wider mb-1.5">Google Maps Link</label>
                       <input
                         type="text"
-                        value={contentForm.contactInfo.facebook}
+                        value={contentForm.contactInfo.googleMaps || ''}
                         onChange={(e) => setContentForm(p => ({
                           ...p,
-                          contactInfo: { ...p.contactInfo, facebook: e.target.value }
+                          contactInfo: { ...p.contactInfo, googleMaps: e.target.value }
                         }))}
-                        className="w-full bg-[#0B0B0B] border border-white/10 rounded-xl px-3 py-2 text-white text-sm focus:outline-none"
-                      />
-                    </div>
-
-                    {/* Instagram */}
-                    <div>
-                      <label className="block text-white/50 text-[10px] uppercase font-semibold tracking-wider mb-1">Instagram URL</label>
-                      <input
-                        type="text"
-                        value={contentForm.contactInfo.instagram}
-                        onChange={(e) => setContentForm(p => ({
-                          ...p,
-                          contactInfo: { ...p.contactInfo, instagram: e.target.value }
-                        }))}
-                        className="w-full bg-[#0B0B0B] border border-white/10 rounded-xl px-3 py-2 text-white text-sm focus:outline-none"
+                        placeholder="https://maps.google.com/..."
+                        className="w-full bg-[#0B0B0B] border border-white/10 rounded-xl px-3.5 py-2.5 text-white text-sm focus:outline-none focus:border-[#D4AF37]"
                       />
                     </div>
                   </div>
                 </div>
 
-                {/* Gallery Management */}
-                <div className="border-t border-white/5 pt-6">
-                  <h3 className="text-white text-base font-bold font-display uppercase tracking-wider mb-4 text-[#D4AF37]">
-                    Exquisite Gallery Manager
+                {/* 4. Operating Hours & Schedule */}
+                <div className="bg-white/5 p-6 rounded-2xl border border-white/10 space-y-4">
+                  <h3 className="text-sm font-bold uppercase tracking-wider text-[#D4AF37] font-sans">
+                    Operating Schedule & Hours
                   </h3>
 
-                  {/* Add URL or upload multiple files */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    {/* Opening Time */}
+                    <div>
+                      <label className="block text-white/60 text-[11px] uppercase font-semibold tracking-wider mb-1.5">Opening Time</label>
+                      <input
+                        type="text"
+                        value={contentForm.contactInfo.openingTime || ''}
+                        onChange={(e) => setContentForm(p => ({
+                          ...p,
+                          contactInfo: { ...p.contactInfo, openingTime: e.target.value }
+                        }))}
+                        placeholder="12:00 PM"
+                        className="w-full bg-[#0B0B0B] border border-white/10 rounded-xl px-3.5 py-2.5 text-white text-sm focus:outline-none focus:border-[#D4AF37]"
+                      />
+                    </div>
+
+                    {/* Closing Time */}
+                    <div>
+                      <label className="block text-white/60 text-[11px] uppercase font-semibold tracking-wider mb-1.5">Closing Time</label>
+                      <input
+                        type="text"
+                        value={contentForm.contactInfo.closingTime || ''}
+                        onChange={(e) => setContentForm(p => ({
+                          ...p,
+                          contactInfo: { ...p.contactInfo, closingTime: e.target.value }
+                        }))}
+                        placeholder="11:30 PM"
+                        className="w-full bg-[#0B0B0B] border border-white/10 rounded-xl px-3.5 py-2.5 text-white text-sm focus:outline-none focus:border-[#D4AF37]"
+                      />
+                    </div>
+
+                    {/* Weekly Holiday */}
+                    <div>
+                      <label className="block text-white/60 text-[11px] uppercase font-semibold tracking-wider mb-1.5">Weekly Holiday</label>
+                      <input
+                        type="text"
+                        value={contentForm.contactInfo.weeklyHoliday || ''}
+                        onChange={(e) => setContentForm(p => ({
+                          ...p,
+                          contactInfo: { ...p.contactInfo, weeklyHoliday: e.target.value }
+                        }))}
+                        placeholder="None (Open All 7 Days)"
+                        className="w-full bg-[#0B0B0B] border border-white/10 rounded-xl px-3.5 py-2.5 text-white text-sm focus:outline-none focus:border-[#D4AF37]"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* 5. Social Media Links */}
+                <div className="bg-white/5 p-6 rounded-2xl border border-white/10 space-y-4">
+                  <h3 className="text-sm font-bold uppercase tracking-wider text-[#D4AF37] font-sans">
+                    Social Media Handles & Links
+                  </h3>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {/* Facebook */}
+                    <div>
+                      <label className="block text-white/60 text-[11px] uppercase font-semibold tracking-wider mb-1.5">Facebook Link</label>
+                      <input
+                        type="text"
+                        value={contentForm.contactInfo.facebook || ''}
+                        onChange={(e) => setContentForm(p => ({
+                          ...p,
+                          contactInfo: { ...p.contactInfo, facebook: e.target.value }
+                        }))}
+                        placeholder="https://facebook.com/..."
+                        className="w-full bg-[#0B0B0B] border border-white/10 rounded-xl px-3.5 py-2.5 text-white text-sm focus:outline-none focus:border-[#D4AF37]"
+                      />
+                    </div>
+
+                    {/* Instagram */}
+                    <div>
+                      <label className="block text-white/60 text-[11px] uppercase font-semibold tracking-wider mb-1.5">Instagram Link</label>
+                      <input
+                        type="text"
+                        value={contentForm.contactInfo.instagram || ''}
+                        onChange={(e) => setContentForm(p => ({
+                          ...p,
+                          contactInfo: { ...p.contactInfo, instagram: e.target.value }
+                        }))}
+                        placeholder="https://instagram.com/..."
+                        className="w-full bg-[#0B0B0B] border border-white/10 rounded-xl px-3.5 py-2.5 text-white text-sm focus:outline-none focus:border-[#D4AF37]"
+                      />
+                    </div>
+
+                    {/* YouTube */}
+                    <div>
+                      <label className="block text-white/60 text-[11px] uppercase font-semibold tracking-wider mb-1.5">YouTube Link</label>
+                      <input
+                        type="text"
+                        value={contentForm.contactInfo.youtube || ''}
+                        onChange={(e) => setContentForm(p => ({
+                          ...p,
+                          contactInfo: { ...p.contactInfo, youtube: e.target.value }
+                        }))}
+                        placeholder="https://youtube.com/..."
+                        className="w-full bg-[#0B0B0B] border border-white/10 rounded-xl px-3.5 py-2.5 text-white text-sm focus:outline-none focus:border-[#D4AF37]"
+                      />
+                    </div>
+
+                    {/* X (Twitter) */}
+                    <div>
+                      <label className="block text-white/60 text-[11px] uppercase font-semibold tracking-wider mb-1.5">X (Twitter) Link</label>
+                      <input
+                        type="text"
+                        value={contentForm.contactInfo.twitter || ''}
+                        onChange={(e) => setContentForm(p => ({
+                          ...p,
+                          contactInfo: { ...p.contactInfo, twitter: e.target.value }
+                        }))}
+                        placeholder="https://x.com/..."
+                        className="w-full bg-[#0B0B0B] border border-white/10 rounded-xl px-3.5 py-2.5 text-white text-sm focus:outline-none focus:border-[#D4AF37]"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* 6. Gallery Management */}
+                <div className="bg-white/5 p-6 rounded-2xl border border-white/10 space-y-4">
+                  <h3 className="text-sm font-bold uppercase tracking-wider text-[#D4AF37] font-sans">
+                    Restaurant Showcase Gallery
+                  </h3>
+
                   <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end mb-4">
                     <div className="md:col-span-6">
                       <label className="block text-white/50 text-[10px] uppercase font-semibold tracking-wider mb-1">Add Image URL</label>
@@ -2573,7 +2914,7 @@ export default function AdminDashboard({
                       <button
                         type="button"
                         onClick={handleAddGalleryUrl}
-                        className="w-full py-2 bg-transparent border border-[#D4AF37] hover:bg-[#D4AF37] hover:text-black text-[#D4AF37] text-xs font-bold uppercase tracking-wider rounded-xl transition-all"
+                        className="w-full py-2 bg-transparent border border-[#D4AF37] hover:bg-[#D4AF37] hover:text-black text-[#D4AF37] text-xs font-bold uppercase tracking-wider rounded-xl transition-all cursor-pointer"
                       >
                         Add URL
                       </button>
@@ -2590,7 +2931,6 @@ export default function AdminDashboard({
                     </div>
                   </div>
 
-                  {/* Images list with deletes */}
                   <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
                     {contentForm.gallery.map((img, idx) => (
                       <div key={idx} className="relative aspect-square rounded-xl overflow-hidden border border-white/10 group bg-[#0B0B0B]">
@@ -2598,7 +2938,7 @@ export default function AdminDashboard({
                         <button
                           type="button"
                           onClick={() => handleRemoveGalleryImage(idx)}
-                          className="absolute inset-0 bg-black/75 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-red-400"
+                          className="absolute inset-0 bg-black/75 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-red-400 cursor-pointer"
                         >
                           <Trash2 className="w-5 h-5" />
                         </button>
@@ -2607,13 +2947,14 @@ export default function AdminDashboard({
                   </div>
                 </div>
 
-                {/* Form Actions */}
-                <div className="flex flex-wrap justify-end gap-3 pt-4 border-t border-white/5">
+                {/* Form Bottom Action Bar */}
+                <div className="flex flex-wrap justify-end gap-3 pt-4 border-t border-white/10">
                   <button
                     type="submit"
-                    className="px-6 py-2.5 bg-white/10 hover:bg-white/20 border border-white/10 text-white font-bold text-xs uppercase tracking-widest rounded-xl transition-all flex items-center gap-1.5"
+                    disabled={isPublishing}
+                    className="px-6 py-2.5 bg-white/10 hover:bg-white/20 border border-white/10 text-white font-bold text-xs uppercase tracking-widest rounded-xl transition-all flex items-center gap-1.5 cursor-pointer"
                   >
-                    <Save className="w-4 h-4" />
+                    <Save className="w-4 h-4 text-[#D4AF37]" />
                     Save Changes
                   </button>
                   <button
@@ -2625,7 +2966,7 @@ export default function AdminDashboard({
                     disabled={isPublishing}
                     className="px-6 py-2.5 bg-[#D4AF37] hover:bg-amber-400 text-black font-bold text-xs uppercase tracking-widest rounded-xl shadow-lg transition-all flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
                   >
-                    {isPublishing ? <Loader2 className="w-4 h-4 animate-spin text-black" /> : <Check className="w-4 h-4" />}
+                    {isPublishing ? <Loader2 className="w-4 h-4 animate-spin text-black" /> : <Check className="w-4 h-4 text-black" />}
                     Publish Now To Site
                   </button>
                 </div>
