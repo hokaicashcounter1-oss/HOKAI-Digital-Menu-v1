@@ -193,6 +193,7 @@ export default function AdminDashboard({
     try {
       res = await fetch(url, options);
     } catch (netErr: any) {
+      console.error('[Browser Fetch Error]: Network or connection failed for URL:', url, netErr);
       throw new Error('Publish failed. Please try again.');
     }
 
@@ -202,15 +203,19 @@ export default function AdminDashboard({
     if (contentType.includes('application/json')) {
       try {
         data = await res.json();
-      } catch (e) {
+      } catch (jsonErr: any) {
+        console.error('[Browser JSON Parse Error]: Failed to parse JSON response from URL:', url, jsonErr);
         throw new Error('Publish failed. Please try again.');
       }
     } else {
+      const text = await res.text();
+      console.error('[Browser HTML/Text Response Error]: Expected JSON but received HTML or plain text from URL:', url, 'Response snippet:', text.substring(0, 300));
       throw new Error('Publish failed. Please try again.');
     }
 
     if (!res.ok) {
-      const errorMsg = data?.error || data?.message || 'Publish failed. Please try again.';
+      const errorMsg = data?.error || data?.message || `Server returned error status ${res.status}`;
+      console.error(`[Browser API Error ${res.status}]:`, errorMsg, data);
       throw new Error(errorMsg);
     }
 
@@ -436,20 +441,116 @@ export default function AdminDashboard({
   const handlePublishToSite = async () => {
     setIsPublishing(true);
     try {
-      const data = await safeFetchJson('/api/publish', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          categories,
-          menuItems,
-          websiteContent: contentForm
-        })
+      // 1. Save pending item form edits if user was in the middle of editing/adding an item
+      let itemsToPublish = [...menuItems];
+      if (isAddingItem && itemForm.name.trim()) {
+        const primaryImage = itemForm.image || (Array.isArray(itemForm.images) && itemForm.images[0]) || '';
+        const imageList = Array.isArray(itemForm.images) && itemForm.images.length > 0 ? itemForm.images : (primaryImage ? [primaryImage] : []);
+        const pendingItem: MenuItem = {
+          id: editingItem ? editingItem.id : `item-${Date.now()}`,
+          name: itemForm.name.trim(),
+          description: (itemForm.description || '').trim(),
+          price: itemForm.price || 0,
+          categoryId: itemForm.categoryId || categories[0]?.id || 'cat-starters',
+          image: primaryImage,
+          images: imageList,
+          isVeg: !!itemForm.isVeg,
+          isNonVeg: !!itemForm.isNonVeg,
+          spiceLevel: itemForm.spiceLevel || 0,
+          isDraft: false
+        };
+        const idx = itemsToPublish.findIndex(i => i.id === pendingItem.id);
+        if (idx !== -1) {
+          itemsToPublish[idx] = pendingItem;
+        } else {
+          itemsToPublish.push(pendingItem);
+        }
+      }
+
+      // 2. Include AI PDF extracted items if present
+      if (parsedItems && parsedItems.length > 0) {
+        for (const pItem of parsedItems) {
+          const primaryImage = pItem.images?.[0] || 'https://images.unsplash.com/photo-1544025162-d76694265947?q=80&w=600&auto=format&fit=crop';
+          const pItemObj: MenuItem = {
+            id: `item-pdf-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+            name: pItem.name.trim(),
+            description: (pItem.description || '').trim(),
+            price: pItem.price || 0,
+            categoryId: pItem.categoryId || categories[0]?.id || 'cat-starters',
+            image: primaryImage,
+            images: pItem.images || [primaryImage],
+            isVeg: !!pItem.isVeg,
+            isNonVeg: !pItem.isVeg,
+            spiceLevel: pItem.spiceLevel || 0,
+            isDraft: false
+          };
+          itemsToPublish.push(pItemObj);
+        }
+      }
+
+      // 3. Include category currently being added
+      let categoriesToPublish = [...categories];
+      if (isAddingCategory && categoryName.trim()) {
+        const slug = categoryName.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-');
+        if (editingCategory) {
+          const catIdx = categoriesToPublish.findIndex(c => c.id === editingCategory.id);
+          if (catIdx !== -1) {
+            categoriesToPublish[catIdx] = { ...editingCategory, name: categoryName.trim(), slug };
+          }
+        } else if (!categoriesToPublish.some(c => c.slug === slug)) {
+          categoriesToPublish.push({
+            id: `cat-${Date.now()}`,
+            name: categoryName.trim(),
+            slug
+          });
+        }
+      }
+
+      console.log('[Publish Action]: Sending publish payload to server...', {
+        categoriesCount: categoriesToPublish.length,
+        itemsCount: itemsToPublish.length
       });
+
+      let data: any = null;
+      try {
+        data = await safeFetchJson('/api/admin/publish', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            categories: categoriesToPublish,
+            menuItems: itemsToPublish,
+            websiteContent: contentForm,
+            contactInfo: contentForm.contactInfo
+          })
+        });
+      } catch (err1) {
+        console.warn('[Publish Action]: /api/admin/publish failed, falling back to /api/publish...', err1);
+        data = await safeFetchJson('/api/publish', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            categories: categoriesToPublish,
+            menuItems: itemsToPublish,
+            websiteContent: contentForm,
+            contactInfo: contentForm.contactInfo
+          })
+        });
+      }
+
+      // Reset editing states on success
+      setEditingItem(null);
+      setIsAddingItem(false);
+      setEditingCategory(null);
+      setIsAddingCategory(false);
+      setCategoryName('');
+      setParsedItems([]);
+      setPdfFile(null);
 
       await onRefreshData();
       setLastUpdated(new Date().toLocaleTimeString());
       showToast(data?.message || 'Published Successfully', 'success');
     } catch (err: any) {
+      console.error('[Browser Publish Error]:', err);
       showToast(err.message || 'Publish failed. Please try again.', 'error');
     } finally {
       setIsPublishing(false);

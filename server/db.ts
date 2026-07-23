@@ -63,7 +63,21 @@ export interface DatabaseSchema {
   };
 }
 
-const DB_PATH = path.join(process.cwd(), 'menu_db.json');
+const DB_PATH_PRIMARY = path.join(process.cwd(), 'menu_db.json');
+const DB_PATH_FALLBACK = path.join('/tmp', 'menu_db.json');
+
+function getWritableDbPath(): string {
+  try {
+    // Check if process.cwd() directory is writable
+    const testPath = path.join(process.cwd(), '.write_test_' + Date.now());
+    fs.writeFileSync(testPath, 'test', 'utf-8');
+    fs.unlinkSync(testPath);
+    return DB_PATH_PRIMARY;
+  } catch (err) {
+    console.warn('[DBManager]: Primary directory is read-only (e.g., Vercel/serverless environment). Using /tmp fallback.');
+    return DB_PATH_FALLBACK;
+  }
+}
 
 // High-quality Initial Data
 const initialCategories: Category[] = [
@@ -357,18 +371,18 @@ export class DBManager {
       return this.cachedData;
     }
 
+    const targetPath = getWritableDbPath();
     try {
-      if (fs.existsSync(DB_PATH)) {
-        const fileContent = fs.readFileSync(DB_PATH, 'utf-8');
+      if (fs.existsSync(targetPath)) {
+        const fileContent = fs.readFileSync(targetPath, 'utf-8');
         const parsed = JSON.parse(fileContent);
-        // Ensure standard properties are present
         if (parsed.categories && parsed.menuItems && parsed.websiteContent) {
           this.cachedData = parsed;
           return parsed;
         }
       }
-    } catch (e) {
-      console.error('Error loading DB from file, recreating initial data:', e);
+    } catch (e: any) {
+      console.error('[DBManager Load Error]: Error loading DB from file, using initial data:', e.message || e);
     }
 
     // Save initial data
@@ -378,11 +392,12 @@ export class DBManager {
   }
 
   static save(data: DatabaseSchema): void {
+    this.cachedData = data;
+    const targetPath = getWritableDbPath();
     try {
-      fs.writeFileSync(DB_PATH, JSON.stringify(data, null, 2), 'utf-8');
-      this.cachedData = data;
-    } catch (e) {
-      console.error('Error saving DB to file:', e);
+      fs.writeFileSync(targetPath, JSON.stringify(data, null, 2), 'utf-8');
+    } catch (e: any) {
+      console.warn('[DBManager Save Warning]: Could not persist JSON DB to disk (in-memory state remains active):', e.message || e);
     }
   }
 
