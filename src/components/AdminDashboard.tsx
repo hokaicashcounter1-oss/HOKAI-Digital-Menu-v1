@@ -47,9 +47,99 @@ export default function AdminDashboard({
     isDraft: false
   });
 
+  // Category form state
+  const [categoryName, setCategoryName] = useState<string>('');
+
+  // Website content form state
+  const [contentForm, setContentForm] = useState<WebsiteContent>({
+    restaurantName: websiteContent.restaurantName || 'HOKAI',
+    restaurantSubtitle: websiteContent.restaurantSubtitle || 'Pan-Asian Kitchen',
+    heroBanner: websiteContent.heroBanner,
+    aboutSection: websiteContent.aboutSection,
+    contactInfo: websiteContent.contactInfo,
+    gallery: websiteContent.gallery
+  });
+
+  // AI & Upload states
   const [isGeneratingImages, setIsGeneratingImages] = useState<boolean>(false);
   const [isDetectingSpice, setIsDetectingSpice] = useState<boolean>(false);
   const [aiSuggestedSpice, setAiSuggestedSpice] = useState<number | null>(null);
+
+  // Selection states
+  const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
+  const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>([]);
+
+  // Category & Search filter states
+  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>('ALL');
+  const [moveTargetCategoryId, setMoveTargetCategoryId] = useState<string>('');
+  const [importCategoryFilter, setImportCategoryFilter] = useState<string>('ALL');
+
+  // Search query states
+  const [itemSearchQuery, setItemSearchQuery] = useState<string>('');
+  const [categorySearchQuery, setCategorySearchQuery] = useState<string>('');
+
+  // PDF Parser States
+  const [pdfFile, setPdfFile] = useState<File | null>(null);
+  const [isParsing, setIsParsing] = useState<boolean>(false);
+  const [parsingStep, setParsingStep] = useState<string>('');
+  const [parserError, setParserError] = useState<string | null>(null);
+  const [parsedItems, setParsedItems] = useState<Array<{
+    categoryName: string;
+    name: string;
+    description: string;
+    price: number;
+    isVeg: boolean;
+    spiceLevel?: number;
+    images?: string[];
+    photoMessage?: string;
+    categoryId?: string; // resolved category id
+  }>>([]);
+
+  const [isPublishing, setIsPublishing] = useState<boolean>(false);
+
+  // Premium Toast Notification State
+  const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+  const showToast = (text: string, type: 'success' | 'error' = 'success') => {
+    setToastMessage({ text, type });
+    setTimeout(() => setToastMessage(null), 3000);
+  };
+
+  // Confirmation Dialog State
+  const [confirmDialog, setConfirmDialog] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void | Promise<void>;
+    confirmLabel?: string;
+    isDanger?: boolean;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {}
+  });
+
+  const confirmAction = (
+    title: string,
+    message: string,
+    onConfirm: () => void | Promise<void>,
+    confirmLabel = 'Delete',
+    isDanger = true
+  ) => {
+    setConfirmDialog({
+      isOpen: true,
+      title,
+      message,
+      onConfirm,
+      confirmLabel,
+      isDanger
+    });
+  };
+
+  const headers = useMemo(() => ({
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${token}`
+  }), [token]);
 
   const handleDetectSpiceWithAI = async () => {
     if (!itemForm.name.trim()) {
@@ -128,19 +218,6 @@ export default function AdminDashboard({
     }
   };
 
-  // Selection states
-  const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
-  const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>([]);
-
-  // Category & Search filter states
-  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>('ALL');
-  const [moveTargetCategoryId, setMoveTargetCategoryId] = useState<string>('');
-  const [importCategoryFilter, setImportCategoryFilter] = useState<string>('ALL');
-
-  // Search query states
-  const [itemSearchQuery, setItemSearchQuery] = useState<string>('');
-  const [categorySearchQuery, setCategorySearchQuery] = useState<string>('');
-
   // Standard category presets for rapid tab rendering
   const STANDARD_CATEGORIES = useMemo(() => [
     'Soups',
@@ -186,17 +263,14 @@ export default function AdminDashboard({
       const cat = categories.find(c => c.id === item.categoryId);
       const catName = cat ? cat.name : '';
 
-      // Count by exact category ID
       if (item.categoryId) {
         stats[item.categoryId] = (stats[item.categoryId] || 0) + 1;
       }
 
-      // Count by category Name
       if (catName) {
         stats[catName] = (stats[catName] || 0) + 1;
       }
 
-      // Match standard names
       STANDARD_CATEGORIES.forEach(std => {
         if (catName.toLowerCase().includes(std.toLowerCase()) || item.name.toLowerCase().includes(std.toLowerCase())) {
           stats[std] = (stats[std] || 0) + 1;
@@ -291,82 +365,6 @@ export default function AdminDashboard({
       cat.slug.toLowerCase().includes(query)
     );
   }, [categories, categorySearchQuery]);
-
-  // Premium Toast Notification State
-  const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
-  const showToast = (text: string, type: 'success' | 'error' = 'success') => {
-    setToastMessage({ text, type });
-    setTimeout(() => setToastMessage(null), 3000);
-  };
-
-  // Confirmation Dialog State
-  const [confirmDialog, setConfirmDialog] = useState<{
-    isOpen: boolean;
-    title: string;
-    message: string;
-    onConfirm: () => void | Promise<void>;
-    confirmLabel?: string;
-    isDanger?: boolean;
-  }>({
-    isOpen: false,
-    title: '',
-    message: '',
-    onConfirm: () => {}
-  });
-
-  const confirmAction = (
-    title: string,
-    message: string,
-    onConfirm: () => void | Promise<void>,
-    confirmLabel = 'Delete',
-    isDanger = true
-  ) => {
-    setConfirmDialog({
-      isOpen: true,
-      title,
-      message,
-      onConfirm,
-      confirmLabel,
-      isDanger
-    });
-  };
-
-  // New category form state
-  const [categoryName, setCategoryName] = useState<string>('');
-
-  // Website content form state
-  const [contentForm, setContentForm] = useState<WebsiteContent>({
-    restaurantName: websiteContent.restaurantName || 'HOKAI',
-    restaurantSubtitle: websiteContent.restaurantSubtitle || 'Pan-Asian Kitchen',
-    heroBanner: websiteContent.heroBanner,
-    aboutSection: websiteContent.aboutSection,
-    contactInfo: websiteContent.contactInfo,
-    gallery: websiteContent.gallery
-  });
-
-  // PDF Parser States
-  const [pdfFile, setPdfFile] = useState<File | null>(null);
-  const [isParsing, setIsParsing] = useState<boolean>(false);
-  const [parsingStep, setParsingStep] = useState<string>('');
-  const [parserError, setParserError] = useState<string | null>(null);
-  const [parsedItems, setParsedItems] = useState<Array<{
-    categoryName: string;
-    name: string;
-    description: string;
-    price: number;
-    isVeg: boolean;
-    spiceLevel?: number;
-    images?: string[];
-    photoMessage?: string;
-    categoryId?: string; // resolved category id
-  }>>([]);
-
-  const [isPublishing, setIsPublishing] = useState<boolean>(false);
-
-  const headers = useMemo(() => ({
-    'Content-Type': 'application/json',
-    'Authorization': `Bearer ${token}`
-  }), [token]);
 
   // Global Publish Handler
   const handlePublishToSite = async () => {
@@ -1204,6 +1202,64 @@ export default function AdminDashboard({
                   </div>
                 </div>
 
+                {/* Quick Category Filtering Tabs */}
+                <div className="flex overflow-x-auto gap-2 pb-2 mb-4 no-scrollbar border-b border-white/5">
+                  {allCategoryTabs.map(tab => {
+                    const isSelected = selectedCategoryFilter === tab.id || selectedCategoryFilter.toLowerCase() === tab.name.toLowerCase();
+                    const count = menuCategoryStats[tab.id] || menuCategoryStats[tab.name] || (tab.id === 'ALL' ? menuItems.length : 0);
+                    return (
+                      <button
+                        key={tab.id}
+                        type="button"
+                        onClick={() => setSelectedCategoryFilter(tab.id)}
+                        className={`px-3.5 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all border flex items-center gap-1.5 cursor-pointer ${
+                          isSelected
+                            ? 'bg-[#D4AF37] border-[#D4AF37] text-black font-bold shadow-[0_0_10px_rgba(212,175,55,0.3)]'
+                            : 'bg-white/5 border-white/10 text-white/70 hover:bg-white/10'
+                        }`}
+                      >
+                        <span>{tab.name}</span>
+                        <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-mono ${
+                          isSelected ? 'bg-black/20 text-black' : 'bg-black/40 text-[#D4AF37]'
+                        }`}>
+                          {count}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Filter Dropdown + Category Statistics bar */}
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-white/5 border border-white/5 p-3 rounded-2xl mb-4 text-xs">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Filter className="w-4 h-4 text-[#D4AF37]" />
+                    <span className="font-bold text-white uppercase tracking-wider">Category:</span>
+                    <select
+                      value={selectedCategoryFilter}
+                      onChange={(e) => setSelectedCategoryFilter(e.target.value)}
+                      className="bg-[#0B0B0B] border border-white/10 text-white rounded-xl px-3 py-1.5 text-xs focus:outline-none focus:border-[#D4AF37] cursor-pointer"
+                    >
+                      {allCategoryTabs.map(tab => (
+                        <option key={tab.id} value={tab.id}>
+                          {tab.name} ({menuCategoryStats[tab.id] || menuCategoryStats[tab.name] || (tab.id === 'ALL' ? menuItems.length : 0)})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Category Statistics Chips */}
+                  <div className="flex flex-wrap gap-1.5 text-[10px]">
+                    {STANDARD_CATEGORIES.map(std => {
+                      const count = menuCategoryStats[std] || 0;
+                      return (
+                        <span key={std} className="bg-white/5 border border-white/10 px-2 py-0.5 rounded-md text-white/60">
+                          {std}: <strong className="text-[#D4AF37]">{count}</strong>
+                        </span>
+                      );
+                    })}
+                  </div>
+                </div>
+
                 {/* Premium Search Bar */}
                 <div className="relative mb-6">
                   <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
@@ -1573,7 +1629,7 @@ export default function AdminDashboard({
 
                 {/* Selection and control bar for bulk actions */}
                 {filteredMenuItems.length > 0 && (
-                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-white/5 border border-white/5 p-4 rounded-2xl mb-4 text-xs">
+                  <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 bg-white/5 border border-white/5 p-4 rounded-2xl mb-4 text-xs">
                     <div className="flex items-center gap-3">
                       <label className="flex items-center gap-2 cursor-pointer text-white/70 font-semibold uppercase tracking-wider">
                         <input
@@ -1595,22 +1651,70 @@ export default function AdminDashboard({
                       <span className="text-white/40 font-mono">({selectedItemIds.length} Selected)</span>
                     </div>
 
-                    <div className="flex flex-wrap gap-2 w-full sm:w-auto">
+                    <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
+                      {/* Publish Selected */}
+                      <button
+                        type="button"
+                        onClick={handleBulkPublishItems}
+                        disabled={selectedItemIds.length === 0}
+                        className={`px-3.5 py-2 rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all border flex items-center gap-1 cursor-pointer ${
+                          selectedItemIds.length > 0
+                            ? 'bg-amber-500/20 hover:bg-amber-500/30 border-amber-500/40 text-amber-300'
+                            : 'bg-white/5 border-white/10 text-white/30 cursor-not-allowed'
+                        }`}
+                      >
+                        <Check className="w-3 h-3" />
+                        Publish Selected
+                      </button>
+
+                      {/* Move Selected To Category */}
+                      <div className="flex items-center gap-1.5 bg-[#0B0B0B] border border-white/10 rounded-xl p-1">
+                        <select
+                          value={moveTargetCategoryId}
+                          onChange={(e) => setMoveTargetCategoryId(e.target.value)}
+                          className="bg-transparent text-white text-[10px] px-2 py-1 focus:outline-none cursor-pointer"
+                        >
+                          <option value="" className="bg-[#121212]">Move to Category...</option>
+                          {categories.map(cat => (
+                            <option key={cat.id} value={cat.id} className="bg-[#121212]">
+                              {cat.name}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          type="button"
+                          onClick={handleBulkMoveCategory}
+                          disabled={selectedItemIds.length === 0 || !moveTargetCategoryId}
+                          className={`px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all border flex items-center gap-1 cursor-pointer ${
+                            selectedItemIds.length > 0 && moveTargetCategoryId
+                              ? 'bg-[#D4AF37] border-[#D4AF37] text-black hover:bg-amber-400'
+                              : 'bg-white/5 border-white/10 text-white/30 cursor-not-allowed'
+                          }`}
+                        >
+                          <FolderOutput className="w-3 h-3" />
+                          Move
+                        </button>
+                      </div>
+
+                      {/* Bulk Delete Selected */}
                       <button
                         type="button"
                         onClick={handleBulkDeleteItems}
-                        className={`px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all border cursor-pointer ${
+                        disabled={selectedItemIds.length === 0}
+                        className={`px-3.5 py-2 rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all border cursor-pointer ${
                           selectedItemIds.length > 0
                             ? 'bg-red-950/40 hover:bg-red-900/40 border-red-500/40 text-red-300'
-                            : 'bg-white/5 border-white/10 text-white/40 hover:bg-white/10 hover:text-white/70'
+                            : 'bg-white/5 border-white/10 text-white/30 cursor-not-allowed'
                         }`}
                       >
                         Bulk Delete Selected
                       </button>
+
+                      {/* Delete All Items */}
                       <button
                         type="button"
                         onClick={handleDeleteAllItems}
-                        className="px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-wider bg-transparent hover:bg-red-950/20 border border-red-500/30 text-red-400 transition-all cursor-pointer ml-auto sm:ml-0"
+                        className="px-3.5 py-2 rounded-xl text-[10px] font-bold uppercase tracking-wider bg-transparent hover:bg-red-950/20 border border-red-500/30 text-red-400 transition-all cursor-pointer"
                       >
                         Delete All Items
                       </button>
@@ -1982,11 +2086,56 @@ export default function AdminDashboard({
                 {/* Parsed items preview & interactive edit spreadsheet */}
                 {parsedItems.length > 0 && (
                   <div className="space-y-6">
-                    <div className="p-4 bg-[#D4AF37]/10 border border-[#D4AF37]/20 rounded-2xl flex gap-3 items-center">
-                      <CheckCircle className="w-5 h-5 text-[#D4AF37] flex-shrink-0" />
-                      <div>
-                        <h4 className="text-sm font-bold text-white uppercase tracking-wider">AI Deconstruction Complete</h4>
-                        <p className="text-white/60 text-xs">Verify category mappings, names, and pricing below. Edit any field directly inside the grid.</p>
+                    <div className="p-4 bg-[#D4AF37]/10 border border-[#D4AF37]/20 rounded-2xl flex flex-col sm:flex-row gap-3 sm:items-center justify-between">
+                      <div className="flex gap-3 items-center">
+                        <CheckCircle className="w-5 h-5 text-[#D4AF37] flex-shrink-0" />
+                        <div>
+                          <h4 className="text-sm font-bold text-white uppercase tracking-wider">AI Deconstruction Complete ({parsedItems.length} Dishes Extracted)</h4>
+                          <p className="text-white/60 text-xs">Verify category mappings, names, and pricing below. Edit any field directly inside the grid.</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Category Filter for AI PDF Import Center */}
+                    <div className="bg-[#0B0B0B] border border-white/10 rounded-2xl p-4 space-y-3">
+                      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
+                        <div className="flex items-center gap-2">
+                          <Filter className="w-4 h-4 text-[#D4AF37]" />
+                          <span className="font-bold text-white uppercase tracking-wider">Filter Extracted Items:</span>
+                          <select
+                            value={importCategoryFilter}
+                            onChange={(e) => setImportCategoryFilter(e.target.value)}
+                            className="bg-[#121212] border border-white/10 text-white rounded-xl px-3 py-1.5 text-xs focus:outline-none focus:border-[#D4AF37] cursor-pointer"
+                          >
+                            {allCategoryTabs.map(tab => (
+                              <option key={tab.id} value={tab.id}>
+                                {tab.name} ({importCategoryStats[tab.id] || importCategoryStats[tab.name] || (tab.id === 'ALL' ? parsedItems.length : 0)})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* Quick category filter pills */}
+                        <div className="flex overflow-x-auto gap-1.5 no-scrollbar max-w-full">
+                          {allCategoryTabs.map(tab => {
+                            const isSelected = importCategoryFilter === tab.id || importCategoryFilter.toLowerCase() === tab.name.toLowerCase();
+                            const count = importCategoryStats[tab.id] || importCategoryStats[tab.name] || (tab.id === 'ALL' ? parsedItems.length : 0);
+                            return (
+                              <button
+                                key={tab.id}
+                                type="button"
+                                onClick={() => setImportCategoryFilter(tab.id)}
+                                className={`px-2.5 py-1 rounded-lg text-[10px] font-semibold whitespace-nowrap transition-all border flex items-center gap-1 cursor-pointer ${
+                                  isSelected
+                                    ? 'bg-[#D4AF37] border-[#D4AF37] text-black font-bold'
+                                    : 'bg-white/5 border-white/10 text-white/60 hover:bg-white/10'
+                                }`}
+                              >
+                                {tab.name} ({count})
+                              </button>
+                            );
+                          })}
+                        </div>
                       </div>
                     </div>
 
@@ -2007,7 +2156,7 @@ export default function AdminDashboard({
                           </tr>
                         </thead>
                         <tbody className="text-sm divide-y divide-white/5">
-                          {parsedItems.map((item, idx) => (
+                          {filteredParsedItems.map((item, idx) => (
                             <tr key={idx} className="hover:bg-white/5">
                               {/* Extracted Category name */}
                               <td className="p-3 pl-4 text-xs font-mono text-white/50">{item.categoryName}</td>

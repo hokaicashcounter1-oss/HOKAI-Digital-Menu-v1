@@ -19,6 +19,7 @@ import GallerySection from './components/GallerySection';
 import ContactSection from './components/ContactSection';
 import AdminLogin from './components/AdminLogin';
 import AdminDashboard from './components/AdminDashboard';
+import AdminErrorBoundary from './components/AdminErrorBoundary';
 
 export default function App() {
   // Website states
@@ -317,14 +318,16 @@ export default function App() {
       {/* CORE DISPLAY (Admin Dashboard vs Public Website) */}
       <main className="flex-grow">
         {isAdminMode && adminToken ? (
-          <AdminDashboard
-            categories={categories}
-            menuItems={menuItems}
-            websiteContent={websiteContent}
-            onRefreshData={loadData}
-            token={adminToken}
-            onLogout={handleLogout}
-          />
+          <AdminErrorBoundary onRefreshData={loadData} onExitAdmin={() => setIsAdminMode(false)}>
+            <AdminDashboard
+              categories={categories}
+              menuItems={menuItems}
+              websiteContent={websiteContent}
+              onRefreshData={loadData}
+              token={adminToken}
+              onLogout={handleLogout}
+            />
+          </AdminErrorBoundary>
         ) : (
           <>
             {/* PUBLIC WEBSITE VIEW */}
