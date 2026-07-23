@@ -188,6 +188,35 @@ export default function AdminDashboard({
     'Authorization': `Bearer ${token}`
   }), [token]);
 
+  const safeFetchJson = async (url: string, options?: RequestInit) => {
+    let res: Response;
+    try {
+      res = await fetch(url, options);
+    } catch (netErr: any) {
+      throw new Error('Publish failed. Please try again.');
+    }
+
+    const contentType = res.headers.get('content-type') || '';
+    let data: any = null;
+
+    if (contentType.includes('application/json')) {
+      try {
+        data = await res.json();
+      } catch (e) {
+        throw new Error('Publish failed. Please try again.');
+      }
+    } else {
+      throw new Error('Publish failed. Please try again.');
+    }
+
+    if (!res.ok) {
+      const errorMsg = data?.error || data?.message || 'Publish failed. Please try again.';
+      throw new Error(errorMsg);
+    }
+
+    return data;
+  };
+
   const handleDetectSpiceWithAI = async () => {
     if (!itemForm.name.trim()) {
       showToast('Please enter item name first to detect spice level.', 'error');
@@ -197,7 +226,7 @@ export default function AdminDashboard({
     setIsDetectingSpice(true);
     try {
       const selectedCat = categories.find(c => c.id === itemForm.categoryId);
-      const res = await fetch('/api/admin/detect-spice', {
+      const data = await safeFetchJson('/api/admin/detect-spice', {
         method: 'POST',
         headers,
         body: JSON.stringify({
@@ -206,11 +235,6 @@ export default function AdminDashboard({
           categoryName: selectedCat ? selectedCat.name : ''
         })
       });
-
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Failed to detect spice level.');
-      }
 
       const level = data.spiceLevel || 1;
       setAiSuggestedSpice(level);
@@ -233,7 +257,7 @@ export default function AdminDashboard({
     setIsGeneratingImages(true);
     try {
       const selectedCat = categories.find(c => c.id === itemForm.categoryId);
-      const response = await fetch('/api/admin/generate-images', {
+      const data = await safeFetchJson('/api/admin/generate-images', {
         method: 'POST',
         headers,
         body: JSON.stringify({
@@ -242,11 +266,6 @@ export default function AdminDashboard({
           categoryName: selectedCat?.name || 'Pan-Asian Food'
         })
       });
-
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to search verified food photos.');
-      }
 
       if (data.verified && Array.isArray(data.images) && data.images.length > 0) {
         setItemForm(prev => ({
@@ -417,7 +436,7 @@ export default function AdminDashboard({
   const handlePublishToSite = async () => {
     setIsPublishing(true);
     try {
-      const response = await fetch('/api/admin/publish-menu', {
+      const data = await safeFetchJson('/api/publish', {
         method: 'POST',
         headers,
         body: JSON.stringify({
@@ -427,16 +446,11 @@ export default function AdminDashboard({
         })
       });
 
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || '❌ Publish Failed. Try Again');
-      }
-
       await onRefreshData();
       setLastUpdated(new Date().toLocaleTimeString());
-      showToast('✅ Menu Published Successfully', 'success');
+      showToast(data?.message || 'Published Successfully', 'success');
     } catch (err: any) {
-      showToast(err.message || '❌ Publish Failed. Try Again', 'error');
+      showToast(err.message || 'Publish failed. Please try again.', 'error');
     } finally {
       setIsPublishing(false);
     }
@@ -461,16 +475,11 @@ export default function AdminDashboard({
       const url = editingItem ? `/api/menu-items/${editingItem.id}` : '/api/menu-items';
       const method = editingItem ? 'PUT' : 'POST';
 
-      const response = await fetch(url, {
+      await safeFetchJson(url, {
         method,
         headers,
         body: JSON.stringify(itemForm)
       });
-
-      if (!response.ok) {
-        const err = await response.json();
-        throw new Error(err.error || 'Failed to save menu item.');
-      }
 
       setEditingItem(null);
       setIsAddingItem(false);
@@ -478,7 +487,7 @@ export default function AdminDashboard({
       setLastUpdated(new Date().toLocaleTimeString());
       showToast(editingItem ? 'Dish updated successfully!' : 'Exquisite dish created successfully!', 'success');
     } catch (err: any) {
-      showToast(err.message, 'error');
+      showToast(err.message || 'Publish failed. Please try again.', 'error');
     }
   };
 
@@ -488,15 +497,10 @@ export default function AdminDashboard({
       'Are you absolutely sure you want to delete this exquisite dish? This action cannot be undone.',
       async () => {
         try {
-          const response = await fetch(`/api/menu-items/${id}`, {
+          await safeFetchJson(`/api/menu-items/${id}`, {
             method: 'DELETE',
             headers
           });
-
-          if (!response.ok) {
-            const err = await response.json();
-            throw new Error(err.error || 'Failed to delete menu item.');
-          }
 
           // Remove from selected list if present
           setSelectedItemIds(prev => prev.filter(x => x !== id));
@@ -504,7 +508,7 @@ export default function AdminDashboard({
           setLastUpdated(new Date().toLocaleTimeString());
           showToast('Dish successfully removed!', 'success');
         } catch (err: any) {
-          showToast(err.message, 'error');
+          showToast(err.message || 'Publish failed. Please try again.', 'error');
         }
       },
       'Delete',
@@ -522,23 +526,18 @@ export default function AdminDashboard({
       `Are you absolutely sure you want to delete the ${selectedItemIds.length} selected dishes? This action cannot be undone.`,
       async () => {
         try {
-          const response = await fetch('/api/menu-items/bulk-delete', {
+          await safeFetchJson('/api/menu-items/bulk-delete', {
             method: 'POST',
             headers,
             body: JSON.stringify({ ids: selectedItemIds })
           });
-
-          if (!response.ok) {
-            const err = await response.json();
-            throw new Error(err.error || 'Failed to delete selected items.');
-          }
 
           setSelectedItemIds([]);
           onRefreshData();
           setLastUpdated(new Date().toLocaleTimeString());
           showToast(`${selectedItemIds.length} dishes successfully deleted!`, 'success');
         } catch (err: any) {
-          showToast(err.message, 'error');
+          showToast(err.message || 'Publish failed. Please try again.', 'error');
         }
       },
       'Delete Selected',
@@ -556,23 +555,18 @@ export default function AdminDashboard({
       `Publish ${selectedItemIds.length} selected dish(es) to the live menu?`,
       async () => {
         try {
-          const response = await fetch('/api/menu-items/bulk-publish', {
+          await safeFetchJson('/api/menu-items/bulk-publish', {
             method: 'POST',
             headers,
             body: JSON.stringify({ ids: selectedItemIds })
           });
-
-          if (!response.ok) {
-            const err = await response.json();
-            throw new Error(err.error || 'Failed to publish selected items.');
-          }
 
           setSelectedItemIds([]);
           onRefreshData();
           setLastUpdated(new Date().toLocaleTimeString());
           showToast(`Successfully published ${selectedItemIds.length} dish(es) to live menu!`, 'success');
         } catch (err: any) {
-          showToast(err.message, 'error');
+          showToast(err.message || 'Publish failed. Please try again.', 'error');
         }
       },
       'Publish Selected'
@@ -594,23 +588,18 @@ export default function AdminDashboard({
       `Move ${selectedItemIds.length} selected dish(es) to category "${targetCat?.name || moveTargetCategoryId}"?`,
       async () => {
         try {
-          const response = await fetch('/api/menu-items/bulk-move-category', {
+          await safeFetchJson('/api/menu-items/bulk-move-category', {
             method: 'POST',
             headers,
             body: JSON.stringify({ ids: selectedItemIds, targetCategoryId: moveTargetCategoryId })
           });
-
-          if (!response.ok) {
-            const err = await response.json();
-            throw new Error(err.error || 'Failed to move selected items.');
-          }
 
           setSelectedItemIds([]);
           onRefreshData();
           setLastUpdated(new Date().toLocaleTimeString());
           showToast(`Successfully moved ${selectedItemIds.length} dish(es) to ${targetCat?.name || moveTargetCategoryId}!`, 'success');
         } catch (err: any) {
-          showToast(err.message, 'error');
+          showToast(err.message || 'Publish failed. Please try again.', 'error');
         }
       },
       'Move Items'
@@ -623,22 +612,17 @@ export default function AdminDashboard({
       'CRITICAL WARNING: This will permanently delete ALL menu items from the database! Are you absolutely sure?',
       async () => {
         try {
-          const response = await fetch('/api/menu-items/all', {
+          await safeFetchJson('/api/menu-items/all', {
             method: 'DELETE',
             headers
           });
-
-          if (!response.ok) {
-            const err = await response.json();
-            throw new Error(err.error || 'Failed to clear all menu items.');
-          }
 
           setSelectedItemIds([]);
           onRefreshData();
           setLastUpdated(new Date().toLocaleTimeString());
           showToast('All menu items cleared successfully!', 'success');
         } catch (err: any) {
-          showToast(err.message, 'error');
+          showToast(err.message || 'Publish failed. Please try again.', 'error');
         }
       },
       'Delete All',
@@ -709,16 +693,11 @@ export default function AdminDashboard({
       const url = editingCategory ? `/api/categories/${editingCategory.id}` : '/api/categories';
       const method = editingCategory ? 'PUT' : 'POST';
 
-      const response = await fetch(url, {
+      await safeFetchJson(url, {
         method,
         headers,
         body: JSON.stringify({ name: categoryName })
       });
-
-      if (!response.ok) {
-        const err = await response.json();
-        throw new Error(err.error || 'Failed to save category.');
-      }
 
       setEditingCategory(null);
       setIsAddingCategory(false);
@@ -727,7 +706,7 @@ export default function AdminDashboard({
       setLastUpdated(new Date().toLocaleTimeString());
       showToast(editingCategory ? 'Category updated successfully!' : 'Category created successfully!', 'success');
     } catch (err: any) {
-      showToast(err.message, 'error');
+      showToast(err.message || 'Publish failed. Please try again.', 'error');
     }
   };
 
@@ -737,15 +716,10 @@ export default function AdminDashboard({
       'Warning: Deleting this category will delete all items belonging to it! Are you absolutely sure?',
       async () => {
         try {
-          const response = await fetch(`/api/categories/${id}`, {
+          await safeFetchJson(`/api/categories/${id}`, {
             method: 'DELETE',
             headers
           });
-
-          if (!response.ok) {
-            const err = await response.json();
-            throw new Error(err.error || 'Failed to delete category.');
-          }
 
           // Remove from selected list if present
           setSelectedCategoryIds(prev => prev.filter(x => x !== id));
@@ -753,7 +727,7 @@ export default function AdminDashboard({
           setLastUpdated(new Date().toLocaleTimeString());
           showToast('Category and its items deleted successfully!', 'success');
         } catch (err: any) {
-          showToast(err.message, 'error');
+          showToast(err.message || 'Publish failed. Please try again.', 'error');
         }
       },
       'Delete',
@@ -771,23 +745,18 @@ export default function AdminDashboard({
       `Warning: Deleting these ${selectedCategoryIds.length} categories will also delete all associated menu dishes! Are you absolutely sure?`,
       async () => {
         try {
-          const response = await fetch('/api/categories/bulk-delete', {
+          await safeFetchJson('/api/categories/bulk-delete', {
             method: 'POST',
             headers,
             body: JSON.stringify({ ids: selectedCategoryIds })
           });
-
-          if (!response.ok) {
-            const err = await response.json();
-            throw new Error(err.error || 'Failed to delete selected categories.');
-          }
 
           setSelectedCategoryIds([]);
           onRefreshData();
           setLastUpdated(new Date().toLocaleTimeString());
           showToast(`${selectedCategoryIds.length} categories deleted successfully!`, 'success');
         } catch (err: any) {
-          showToast(err.message, 'error');
+          showToast(err.message || 'Publish failed. Please try again.', 'error');
         }
       },
       'Delete Selected',
@@ -801,22 +770,17 @@ export default function AdminDashboard({
       'CRITICAL WARNING: This will permanently delete ALL categories AND ALL menu items! Are you absolutely sure?',
       async () => {
         try {
-          const response = await fetch('/api/categories/all', {
+          await safeFetchJson('/api/categories/all', {
             method: 'DELETE',
             headers
           });
-
-          if (!response.ok) {
-            const err = await response.json();
-            throw new Error(err.error || 'Failed to clear all categories.');
-          }
 
           setSelectedCategoryIds([]);
           onRefreshData();
           setLastUpdated(new Date().toLocaleTimeString());
           showToast('All categories and items deleted successfully!', 'success');
         } catch (err: any) {
-          showToast(err.message, 'error');
+          showToast(err.message || 'Publish failed. Please try again.', 'error');
         }
       },
       'Delete All',
@@ -829,22 +793,17 @@ export default function AdminDashboard({
     if (e) e.preventDefault();
     setIsPublishing(true);
     try {
-      const response = await fetch('/api/website-content', {
+      const data = await safeFetchJson('/api/website-content', {
         method: 'PUT',
         headers,
         body: JSON.stringify(contentForm)
       });
 
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || '❌ Unable to Save Contact Information');
-      }
-
       await onRefreshData();
       setLastUpdated(new Date().toLocaleTimeString());
-      showToast(data.message || '✅ Contact Information Published Successfully', 'success');
+      showToast(data.message || 'Contact Information Published Successfully', 'success');
     } catch (err: any) {
-      showToast(err.message || '❌ Unable to Save Contact Information', 'error');
+      showToast(err.message || 'Publish failed. Please try again.', 'error');
     } finally {
       setIsPublishing(false);
     }
@@ -966,16 +925,11 @@ export default function AdminDashboard({
       const base64Pdf = await fileToBase64(pdfFile);
 
       setParsingStep('Querying Gemini 3.6-flash AI model to read and structure your menu...');
-      const response = await fetch('/api/admin/parse-pdf', {
+      const data = await safeFetchJson('/api/admin/parse-pdf', {
         method: 'POST',
         headers,
         body: JSON.stringify({ pdfBase64: base64Pdf })
       });
-
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || 'The model failed to parse this specific document layout.');
-      }
 
       setParsingStep('Resolving extracted food categories against current database...');
       // Align or mapping extracted categories
@@ -994,7 +948,7 @@ export default function AdminDashboard({
       setParsedItems(mapped);
       setParsingStep('Parsing successfully completed!');
     } catch (err: any) {
-      setParserError(err.message);
+      setParserError(err.message || 'Publish failed. Please try again.');
     } finally {
       setIsParsing(false);
     }
@@ -1009,9 +963,9 @@ export default function AdminDashboard({
 
     setIsPublishing(true);
     try {
-      const endpoint = isDraftMode ? '/api/admin/save-draft' : '/api/admin/publish-menu';
+      const endpoint = isDraftMode ? '/api/admin/save-draft' : '/api/publish';
 
-      const response = await fetch(endpoint, {
+      const data = await safeFetchJson(endpoint, {
         method: 'POST',
         headers,
         body: JSON.stringify({
@@ -1021,23 +975,18 @@ export default function AdminDashboard({
         })
       });
 
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || (isDraftMode ? 'Failed to save drafts.' : '❌ Publish Failed. Try Again'));
-      }
-
       setParsedItems([]);
       setPdfFile(null);
       await onRefreshData();
       setLastUpdated(new Date().toLocaleTimeString());
 
       if (isDraftMode) {
-        showToast('✅ Drafts Saved Successfully! Check Menu Items tab to preview.', 'success');
+        showToast('Drafts Saved Successfully!', 'success');
       } else {
-        showToast('✅ Menu Published Successfully', 'success');
+        showToast(data?.message || 'Published Successfully', 'success');
       }
     } catch (err: any) {
-      showToast(err.message || 'Operation failed. Try again.', 'error');
+      showToast(err.message || 'Publish failed. Please try again.', 'error');
     } finally {
       setIsPublishing(false);
     }

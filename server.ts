@@ -552,10 +552,11 @@ async function startServer() {
     }
   });
 
-  // POST /api/admin/publish-menu - Publish menu items & categories to live site
-  app.post('/api/admin/publish-menu', requireAdmin, async (req, res) => {
+  // POST /api/admin/publish-menu & aliases - Publish menu items & categories to live site
+  const handlePublishAll = async (req: express.Request, res: express.Response) => {
     try {
-      const { items, menuItems, categories: newCategories, websiteContent } = req.body || {};
+      res.setHeader('Content-Type', 'application/json');
+      const { items, menuItems, categories: newCategories, websiteContent, content, contactInfo } = req.body || {};
 
       let currentCategories = DBManager.getCategories();
       
@@ -574,9 +575,15 @@ async function startServer() {
       }
 
       // Save website content if provided
-      if (websiteContent) {
-        DBManager.updateWebsiteContent(websiteContent);
-        await upsertSupabaseWebsiteContent(websiteContent);
+      const contentToSave = websiteContent || content;
+      if (contentToSave) {
+        DBManager.updateWebsiteContent(contentToSave);
+        await upsertSupabaseWebsiteContent(contentToSave);
+      } else if (contactInfo) {
+        const existing = DBManager.getWebsiteContent();
+        const updated = { ...existing, contactInfo };
+        DBManager.updateWebsiteContent(updated);
+        await upsertSupabaseWebsiteContent(updated);
       }
 
       let currentMenuItems = DBManager.getMenuItems();
@@ -603,7 +610,6 @@ async function startServer() {
           const primaryImage = item.image || (Array.isArray(item.images) && item.images[0]) || '';
           const imageList = Array.isArray(item.images) && item.images.length > 0 ? item.images : (primaryImage ? [primaryImage] : []);
 
-          // Generate or preserve verified images (Method 1 AI PDF import provides verifiedImages; Method 2 manual edits accept image directly)
           const verifiedImagesList = Array.isArray(item.verifiedImages) && item.verifiedImages.length > 0
             ? item.verifiedImages
             : (primaryImage ? [{
@@ -660,60 +666,119 @@ async function startServer() {
 
       res.json({
         success: true,
-        message: '✅ Menu Published Successfully',
+        message: "Published Successfully",
         lastPublishedAt,
         publishedCount: allPublishedItems.length,
         categoriesCount: DBManager.getCategories().length
       });
     } catch (error: any) {
       console.error('[Publish API Error]:', error);
-      res.status(500).json({ error: error.message || '❌ Publish Failed. Try Again' });
+      res.status(500).json({ success: false, error: error.message || 'Publish failed. Please try again.' });
     }
-  });
+  };
 
-  // POST /api/publish - Backwards compatible alias for publish-menu
-  app.post('/api/publish', requireAdmin, async (req, res) => {
+  // Attach publish handler to all publish route variations
+  app.post('/api/admin/publish-menu', requireAdmin, handlePublishAll);
+  app.post('/api/publish', requireAdmin, handlePublishAll);
+  app.post('/api/admin/publish', requireAdmin, handlePublishAll);
+  app.post('/api/publish-now', requireAdmin, handlePublishAll);
+
+  // Universal Save Handler
+  const handleSaveAll = async (req: express.Request, res: express.Response) => {
     try {
-      const { categories, menuItems, websiteContent } = req.body || {};
-      
-      if (Array.isArray(categories)) {
-        DBManager.updateCategories(categories);
-        for (const cat of categories) {
+      res.setHeader('Content-Type', 'application/json');
+      const { items, menuItems, categories: newCategories, websiteContent, content, contactInfo } = req.body || {};
+
+      if (Array.isArray(newCategories)) {
+        let currentCategories = DBManager.getCategories();
+        for (const cat of newCategories) {
+          const idx = currentCategories.findIndex(c => c.id === cat.id);
+          if (idx !== -1) currentCategories[idx] = cat;
+          else currentCategories.push(cat);
           await upsertSupabaseCategory(cat);
         }
+        DBManager.updateCategories(currentCategories);
       }
 
-      if (websiteContent) {
-        DBManager.updateWebsiteContent(websiteContent);
-        await upsertSupabaseWebsiteContent(websiteContent);
+      const contentToSave = websiteContent || content;
+      if (contentToSave) {
+        DBManager.updateWebsiteContent(contentToSave);
+        await upsertSupabaseWebsiteContent(contentToSave);
+      } else if (contactInfo) {
+        const existing = DBManager.getWebsiteContent();
+        const updated = { ...existing, contactInfo };
+        DBManager.updateWebsiteContent(updated);
+        await upsertSupabaseWebsiteContent(updated);
       }
 
-      let itemsToPublish = Array.isArray(menuItems) ? menuItems : DBManager.getMenuItems();
-      
-      const publishedItems: MenuItem[] = itemsToPublish.map(item => ({
-        ...item,
-        isDraft: false
-      }));
-
-      DBManager.updateMenuItems(publishedItems);
-
-      for (const item of publishedItems) {
-        await upsertSupabaseMenuItem(item);
+      const rawItems = items || menuItems;
+      if (Array.isArray(rawItems) && rawItems.length > 0) {
+        let currentItems = DBManager.getMenuItems();
+        for (const item of rawItems) {
+          const idx = currentItems.findIndex(i => i.id === item.id);
+          if (idx !== -1) currentItems[idx] = item;
+          else currentItems.push(item);
+          await upsertSupabaseMenuItem(item);
+        }
+        DBManager.updateMenuItems(currentItems);
       }
-
-      lastPublishedAt = new Date().toISOString();
 
       res.json({
         success: true,
-        message: '✅ Menu Published Successfully',
-        lastPublishedAt,
-        publishedCount: publishedItems.length,
-        categoriesCount: DBManager.getCategories().length
+        message: "Saved Successfully",
+        content: DBManager.getWebsiteContent()
       });
     } catch (error: any) {
-      console.error('[Publish API Error]:', error);
-      res.status(500).json({ error: error.message || '❌ Publish Failed. Try Again' });
+      console.error('[Save API Error]:', error);
+      res.status(500).json({ success: false, error: error.message || 'Save failed. Please try again.' });
     }
+  };
+
+  app.post('/api/save', requireAdmin, handleSaveAll);
+  app.post('/api/admin/save', requireAdmin, handleSaveAll);
+
+  // Additional Website Content endpoints (POST + PUT)
+  app.post('/api/website-content', requireAdmin, async (req, res) => {
+    try {
+      res.setHeader('Content-Type', 'application/json');
+      const { heroBanner, aboutSection, contactInfo, gallery, restaurantName, restaurantSubtitle } = req.body || {};
+      const newContent = {
+        heroBanner: heroBanner || '',
+        aboutSection: aboutSection || '',
+        contactInfo: contactInfo || {},
+        gallery: gallery || [],
+        restaurantName: restaurantName || 'HOKAI',
+        restaurantSubtitle: restaurantSubtitle || 'Pan-Asian Kitchen'
+      };
+      DBManager.updateWebsiteContent(newContent);
+      await upsertSupabaseWebsiteContent(newContent);
+      res.json({
+        success: true,
+        message: 'Published Successfully',
+        content: DBManager.getWebsiteContent()
+      });
+    } catch (error: any) {
+      console.error('[Save Contact Error]:', error);
+      res.status(500).json({ success: false, error: 'Publish failed. Please try again.' });
+    }
+  });
+
+  // GET endpoints for publish & save status
+  app.get('/api/publish', (req, res) => {
+    res.setHeader('Content-Type', 'application/json');
+    res.json({ success: true, message: 'Publish Status OK', lastPublishedAt });
+  });
+  app.get('/api/admin/publish', (req, res) => {
+    res.setHeader('Content-Type', 'application/json');
+    res.json({ success: true, message: 'Publish Status OK', lastPublishedAt });
+  });
+  app.get('/api/save', (req, res) => {
+    res.setHeader('Content-Type', 'application/json');
+    res.json({ success: true, message: 'Save Status OK', content: DBManager.getWebsiteContent() });
+  });
+  app.get('/api/admin/save', (req, res) => {
+    res.setHeader('Content-Type', 'application/json');
+    res.json({ success: true, message: 'Save Status OK', content: DBManager.getWebsiteContent() });
   });
 
   // GET /api/published-menu - Public Endpoint returning ONLY published data
@@ -809,6 +874,12 @@ async function startServer() {
       console.error("Failed to detect spice level:", error);
       res.status(500).json({ error: error.message });
     }
+  });
+
+  // 404 catch-all for /api/* routes to ALWAYS return JSON, never HTML
+  app.all('/api/*', (req, res) => {
+    res.setHeader('Content-Type', 'application/json');
+    res.status(404).json({ success: false, error: 'Publish failed. Please try again.' });
   });
 
   // --- VITE DEV MIDDLEWARE / STATIC FILES ---
